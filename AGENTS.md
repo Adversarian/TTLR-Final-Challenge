@@ -37,4 +37,5 @@
 - Target hosting expects a single Dockerfile entrypoint, so the container must launch the API directly through `uvicorn`.
 - External services such as PostgreSQL will be provisioned separately; application should read their URLs from environment variables (e.g., via `.env`).
 - Maintain a `.env.template` enumerating required variables for runtime configuration.
-- Dockerfile installs dependencies with `uv sync` and launches the API through `uv run python -m app.server`.
+- Dockerfile installs dependencies with `uv sync`, sets default host/port env vars, and launches the API through `uv run python -m app.server`.
+- `.dockerignore` mirrors key git ignores to keep build contexts lean.

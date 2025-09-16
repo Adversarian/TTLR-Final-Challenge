@@ -23,3 +23,8 @@
 - Added lightweight config loader and `app.server` runner to honour env-driven host/port/log level settings.
 - Authored Dockerfile using the `uv` package manager to install dependencies and launch the FastAPI app via `uv run`.
 - Refreshed docs to capture deployment workflow and environment wiring updates.
+
+# Entry #6: Container Polish
+- Added `.dockerignore` to trim build context and keep images lean.
+- Baked default `APP_HOST`/`APP_PORT` env vars into the Dockerfile for clarity on deployment defaults.
+- Updated agent manual to record these containerization tweaks.

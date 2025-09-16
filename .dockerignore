@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+uv.lock
+.git
+.gitignore
+README.md
+DEVDIARY.md
+AGENTS.md
+PROBLEMSTATEMENT.md
