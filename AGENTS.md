@@ -3,7 +3,7 @@
 ## Non-Negotiable Ground Rules
 - Use the Pydantic-AI framework for every LLM interaction; follow its best practices for orchestration.
 - Manage Python dependencies exclusively with `uv`; do not shell out to `pip`.
-- Package the runtime inside `compose.yaml` so Docker Engine can bring the service up via `docker compose up`.
+- Package the service with a single Dockerfile that starts the FastAPI API directly (no docker-compose runtime).
 - Evolve the assistant scenario by scenario, ensuring new behavior never breaks previously satisfied scenarios.
 - Capture complete, replayable judge conversations locally; combine Logfire (from Pydantic-AI) with local log files plus a replay utility.
 - Expose an autonomous `/chat` endpoint matching the problem specification; any extra endpoints must remain optional.
@@ -28,3 +28,13 @@
 - Detailed schema for local conversation replay store (format, indexing, tooling).
 - Strategy for multimodal (image) handling in scenarios six and seven.
 - Data ingestion pipeline for Torob datasets inside Dockerized environment.
+
+## Implementation Notes
+- Baseline FastAPI service lives in `app/` with `/chat` handling scenario zero statically; ready for future Pydantic-AI agent integration.
+- `app/config.py` loads runtime settings from env vars; `app/server.py` starts uvicorn with those values via `uv run`.
+
+## Deployment Notes
+- Target hosting expects a single Dockerfile entrypoint, so the container must launch the API directly through `uvicorn`.
+- External services such as PostgreSQL will be provisioned separately; application should read their URLs from environment variables (e.g., via `.env`).
+- Maintain a `.env.template` enumerating required variables for runtime configuration.
+- Dockerfile installs dependencies with `uv sync` and launches the API through `uv run python -m app.server`.

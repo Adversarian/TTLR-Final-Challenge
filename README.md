@@ -1,2 +1,2 @@
 # TTLR-Final-Challenge
-"Confuse thyself, confuse the enemy" - Confucius
+"Confuse thyself, confuse the enemy." - Confucius
