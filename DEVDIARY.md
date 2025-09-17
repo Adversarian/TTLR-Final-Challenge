@@ -55,3 +55,20 @@
 # Entry #12: Ingestion Fixes
 - Set `UV_LINK_MODE=copy` in the container entrypoint to silence repeated hardlink warnings from `uv run`.
 - Cast all-null Polars columns to text before loading to Postgres to avoid ADBC type mapping errors during bootstrap.
+
+# Entry #13: Scenario One Agentization
+- Replaced the static scenario-zero handler with a unified Pydantic-AI agent using OpenAI models and a lookup tool backed by Postgres.
+- Added psycopg connection pooling plus SQL tooling that casts null-only columns to keep ingestion stable.
+- Prepared groundwork for SQL-grounded responses so the agent can resolve direct product lookup requests (scenario 1) without breaking spec accuracy.
+
+# Entry #14: OpenAI Routing Update
+- Added support for custom OpenAI base URLs via `OPENAI_BASE_URL` so traffic can be routed through the competition proxy.
+
+# Entry #15: Reasoning Control
+- Wired `OPENAI_REASONING_EFFORT` so we can throttle reasoning token budgets when using a dedicated reasoning model.
+
+# Entry #16: Dependency Lock-in
+- Updated Docker build to copy `uv.lock` and run `uv sync --locked` ensuring container installs match the resolved versions.
+
+# Entry #17: Documentation Discipline
+- Agreed to consult latest upstream docs for Pydantic-AI, psycopg, OpenAI SDKs, etc., before using new APIs to avoid stale assumptions.
