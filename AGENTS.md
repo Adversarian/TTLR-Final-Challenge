@@ -3,7 +3,7 @@
 ## Non-Negotiable Ground Rules
 - Use the Pydantic-AI framework for every LLM interaction; follow its best practices for orchestration.
 - Manage Python dependencies exclusively with `uv`; do not shell out to `pip`.
-- Package the service with a single Dockerfile that starts the FastAPI API directly (no docker-compose runtime).
+- Package the service with a single Dockerfile that starts the FastAPI API directly (no docker-compose runtime in production).
 - Evolve the assistant scenario by scenario, ensuring new behavior never breaks previously satisfied scenarios.
 - Capture complete, replayable judge conversations locally; combine Logfire (from Pydantic-AI) with local log files plus a replay utility.
 - Expose an autonomous `/chat` endpoint matching the problem specification; any extra endpoints must remain optional.
@@ -22,20 +22,30 @@
 - Delay emitting `base_random_keys`/`member_random_keys` until absolutely confident—judge may halt on first non-null value.
 - Keep responses terse while satisfying scenario-specific formatting to preserve latency headroom.
 - Qdrant vector store is optional; introduce only if similarity search materially helps (e.g., scenario eight). Until then rely on structured filters.
-- Tier models by task criticality: use stronger reasoning models sparingly where accuracy gates scenario success; default to cheaper/faster models otherwise.
+- Tier models by task criticality: use stronger reasoning models sparingly where accuracy gates success; default to cheaper/faster models otherwise.
 
-## Open Questions / To Refine Soon
-- Detailed schema for local conversation replay store (format, indexing, tooling).
-- Strategy for multimodal (image) handling in scenarios six and seven.
-- Data ingestion pipeline for Torob datasets inside Dockerized environment.
+## Data & AI Stack Decisions
+- Torob datasets arrive as Parquet exports; `scripts/ingest.py` loads them into Postgres. Data directory is configurable per environment.
+- SQL remains the primary retrieval surface. Optional OpenAI embeddings can pre-filter candidates before SQL when recall demands it.
+- All LLM and embedding calls use OpenAI models, configured via `OPENAI_*` environment variables.
+
+## Telemetry & Replay Strategy
+- Implement dual logging: structured telemetry via Logfire/OpenAI tooling and append-only JSONL conversation transcripts.
+- Replay tooling (pytest) will consume the JSONL logs to mimic judge conversations, including LLM-judged scenarios.
+- Production must mount a persistent volume at `REPLAY_LOG_DIR` so conversation logs survive restarts.
 
 ## Implementation Notes
 - Baseline FastAPI service lives in `app/` with `/chat` handling scenario zero statically; ready for future Pydantic-AI agent integration.
 - `app/config.py` loads runtime settings from env vars; `app/server.py` starts uvicorn with those values via `uv run`.
+- `scripts/download_data.py` fetches the Torob archive from Google Drive (via `gdown`) and optionally extracts it for ingestion.
+- `scripts/ingest.py` provides a reusable CLI (`uv run python -m scripts.ingest`) for Postgres loading.
+- `start.sh` bootstraps dataset download/ingestion when `TOROB_BOOTSTRAP=1`, then launches the API via `uv run`.
+  It also defaults `UV_LINK_MODE=copy` to avoid hardlink warnings inside containers.
 
 ## Deployment Notes
-- Target hosting expects a single Dockerfile entrypoint, so the container must launch the API directly through `uvicorn`.
-- External services such as PostgreSQL will be provisioned separately; application should read their URLs from environment variables (e.g., via `.env`).
-- Maintain a `.env.template` enumerating required variables for runtime configuration.
-- Dockerfile installs dependencies with `uv sync`, sets default host/port env vars, and launches the API through `uv run python -m app.server`.
-- `.dockerignore` mirrors key git ignores to keep build contexts lean.
+- Production hosting uses the Dockerfile-only flow; the container launches the API directly through `uv run python -m app.server`.
+- External services such as Postgres are provisioned separately. The app reads connection strings from env vars (or `.env` when local).
+- `.env.template` lists required configuration including database URL, OpenAI keys, and replay log directory.
+- `.dockerignore` trims build contexts; defaults for `APP_HOST`/`APP_PORT` are baked into the Dockerfile.
+- `dev-compose.yaml` exists for local development only—never shipped to production.
+- `start.sh` is the container entrypoint; set `TOROB_BOOTSTRAP=1`, `TOROB_DRIVE_ID`, and `TOROB_DATA_DIR` to seed data automatically during deployment.

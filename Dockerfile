@@ -18,6 +18,8 @@ RUN uv sync --no-dev
 
 COPY . .
 
+RUN chmod +x /app/start.sh
+
 EXPOSE 8000
 
-CMD ["uv", "run", "python", "-m", "app.server"]
+CMD ["/app/start.sh"]
