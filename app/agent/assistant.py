@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from decimal import Decimal
 from functools import lru_cache
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, urlparse
 
 from anyio import to_thread
@@ -412,26 +412,77 @@ def _hydrate_product_contexts(candidates: List[ProductCandidate]) -> List[Produc
 
 @lru_cache(maxsize=1)
 def get_lookup_tool() -> FunctionTool:
-    def lookup_products(args: ProductLookupArgs) -> List[dict]:
-        """Hybrid search over the product catalog with feature and seller context."""
+    def lookup_products(
+        payload: object | None = None,
+        *,
+        product_name: Optional[str] = None,
+        base_random_key: Optional[str] = None,
+        member_random_key: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> List[dict]:
+        """Hybrid search over the product catalog with feature and seller context.
 
-        limit = max(1, min(args.limit, 20))
+        Args:
+            payload: Raw payload dictionary or ProductLookupArgs instance supplied by
+                the caller.
+            product_name: Free-form text describing the desired product.
+            base_random_key: Known Torob base random key to fetch a product directly.
+            member_random_key: Known Torob member random key to fetch a product
+                through an offer.
+            limit: Maximum number of product contexts to return (clamped between 1
+                and 20, default 5).
+
+        Returns:
+            A list of product contexts containing features, seller stats, and offer
+            details ready for LLM consumption.
+
+        Raises:
+            TypeError: If ``payload`` is neither a mapping nor a ProductLookupArgs
+                instance.
+        """
+
+        if isinstance(payload, ProductLookupArgs):
+            lookup_args = payload
+        else:
+            data: Dict[str, Any] = {}
+            if isinstance(payload, dict):
+                data.update(payload)
+            elif payload is not None:
+                raise TypeError(
+                    "lookup_products payload must be a dict or ProductLookupArgs; "
+                    f"received {type(payload)!r}"
+                )
+
+            merged_kwargs: Dict[str, Any] = {
+                "product_name": product_name,
+                "base_random_key": base_random_key,
+                "member_random_key": member_random_key,
+            }
+            for key, value in merged_kwargs.items():
+                if key not in data:
+                    data[key] = value
+            if "limit" not in data and limit is not None:
+                data["limit"] = limit
+
+            lookup_args = ProductLookupArgs.model_validate(data)
+
+        limit = max(1, min(lookup_args.limit, 20))
         candidates: List[ProductCandidate] = []
         seen: set[str] = set()
 
-        if args.base_random_key:
-            direct = _fetch_product_by_random_key(args.base_random_key.strip())
+        if lookup_args.base_random_key:
+            direct = _fetch_product_by_random_key(lookup_args.base_random_key.strip())
             if direct and direct.random_key not in seen:
                 candidates.append(direct)
                 seen.add(direct.random_key)
 
-        if args.member_random_key:
-            member = _fetch_product_by_member_key(args.member_random_key.strip())
+        if lookup_args.member_random_key:
+            member = _fetch_product_by_member_key(lookup_args.member_random_key.strip())
             if member and member.random_key not in seen:
                 candidates.append(member)
                 seen.add(member.random_key)
 
-        query = args.product_name.strip() if args.product_name else None
+        query = lookup_args.product_name.strip() if lookup_args.product_name else None
         if query:
             for match in _hybrid_retrieve(query, limit * 2):
                 if len(candidates) >= limit:
