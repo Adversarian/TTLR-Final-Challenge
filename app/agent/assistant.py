@@ -12,14 +12,14 @@ from anyio import to_thread
 from pydantic import BaseModel, Field
 from psycopg.rows import dict_row
 
-from llama_index.agent.function_agent import FunctionAgent
+from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core import VectorStoreIndex
 from llama_index.core.llms import ChatMessage as LlamaChatMessage, MessageRole
 from llama_index.core.memory import ChatMemoryBuffer, SimpleComposableMemory
 from llama_index.core.output_parsers import PydanticOutputParser
 from llama_index.core.tools import FunctionTool
 from llama_index.vector_stores.postgres import PGVectorStore
-from llama_index.workflows import Context, StartEvent, StopEvent, workflow
+from llama_index.core.workflow import Context, StartEvent, StopEvent, workflow
 
 from app.config import settings
 from app.db import get_pool
