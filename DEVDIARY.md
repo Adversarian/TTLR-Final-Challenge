@@ -81,3 +81,13 @@
 # Entry #19: Remote Testing Pivot
 - Dropped local compose files; testing now targets the remote dev environment exposed through `CODEX_REMOTE_API_URL`.
 - Documented new env variables (`PHOENIX_SERVER_URL`, `CODEX_REMOTE_API_URL`) in templates and manuals to keep deployments aligned.
+
+# Entry #20: Competition Reboot Alignment
+- Re-read `PROBLEMSTATEMENT.md` and captured the official ground rules supplied by the organizer.
+- Updated `AGENTS.md` with the new non-negotiables: LlamaIndex orchestration, uv-only dependency management, Docker Compose runtime, and replayable logging.
+- Logged open tasks for aligning the existing scaffold with LlamaIndex-first architecture plus compose-based deployment.
+
+# Entry #21: Single-Image Runtime Switch
+- Recorded the organizer's latest directive to drop Docker Compose in favor of a single-container deployment.
+- Updated `AGENTS.md` to enforce the new runtime constraint while preserving logging and LlamaIndex requirements.
+- Planned documentation updates to explain how operators should mount host volumes for replay logs with `docker run`.
