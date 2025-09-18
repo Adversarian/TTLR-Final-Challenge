@@ -15,7 +15,13 @@ from psycopg.rows import dict_row
 from app.config import settings
 from app.db import get_pool
 
-from .models import ProductCandidate, ProductContext, ProductLookupArgs, SellerOffer, SellerStats
+from .models import (
+    ProductCandidate,
+    ProductContext,
+    ProductLookupArgs,
+    SellerOffer,
+    SellerStats,
+)
 
 
 def _to_float(value: Optional[Decimal | float | int | str]) -> Optional[float]:
@@ -194,7 +200,9 @@ def _fetch_product_by_member_key(member_key: str) -> Optional[ProductCandidate]:
     )
 
 
-def _hydrate_product_contexts(candidates: Iterable[ProductCandidate]) -> List[ProductContext]:
+def _hydrate_product_contexts(
+    candidates: Iterable[ProductCandidate],
+) -> List[ProductContext]:
     candidate_list = list(candidates)
     if not candidate_list:
         return []

@@ -31,7 +31,9 @@ def parse_args() -> argparse.Namespace:
 
 def _post(endpoint: str, payload: dict) -> tuple[int, str]:
     body = json.dumps(payload).encode("utf-8")
-    req = request.Request(endpoint, data=body, headers={"Content-Type": "application/json"})
+    req = request.Request(
+        endpoint, data=body, headers={"Content-Type": "application/json"}
+    )
     with request.urlopen(req) as resp:
         charset = resp.headers.get_content_charset("utf-8")
         response_body = resp.read().decode(charset)
@@ -42,7 +44,10 @@ def main() -> int:
     args = parse_args()
     entries = load_conversation(args.chat_id, args.log_dir)
     if not entries:
-        print(f"No conversation found for chat_id={args.chat_id} in {args.log_dir}", file=sys.stderr)
+        print(
+            f"No conversation found for chat_id={args.chat_id} in {args.log_dir}",
+            file=sys.stderr,
+        )
         return 1
 
     for entry in entries:
@@ -61,7 +66,9 @@ def main() -> int:
                 try:
                     status, body = _post(args.endpoint, payload)
                 except error.HTTPError as exc:
-                    print(f"[endpoint {exc.code}] {exc.read().decode('utf-8', errors='ignore')}")
+                    print(
+                        f"[endpoint {exc.code}] {exc.read().decode('utf-8', errors='ignore')}"
+                    )
                 except error.URLError as exc:
                     print(f"[endpoint error] {exc}")
                 else:

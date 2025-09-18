@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from llama_index.core.agent.workflow import FunctionAgent
 from llama_index.core.llms import ChatMessage as LlamaChatMessage, MessageRole
-from llama_index.core.memory import ChatMemoryBuffer, SimpleComposableMemory
 from llama_index.core.workflow import Context, workflow
+from llama_index.core.memory import Memory
 
 from app.models.chat import ChatRequest, ChatResponse
 
@@ -18,7 +18,7 @@ from .scenarios import handle_scenario_zero
 from .tools import get_lookup_tool
 
 
-def build_agent(_: SimpleComposableMemory | None = None) -> FunctionAgent:
+def build_agent() -> FunctionAgent:
     tool = get_lookup_tool()
     return FunctionAgent(
         tools=[tool],
@@ -45,22 +45,19 @@ async def _execute_chat(request: ChatRequest) -> ChatResponse:
     if scenario_zero is not None:
         return scenario_zero
 
-    memory = SimpleComposableMemory(
-        primary_memory=ChatMemoryBuffer.from_defaults(token_limit=4000)
-    )
-    chat_history: list[LlamaChatMessage] = []
+    memory = Memory.from_defaults(session_id=request.chat_id)
     for message in request.messages[:-1]:
         llama_message = LlamaChatMessage(
-            role=MessageRole.ASSISTANT if message.role == "assistant" else MessageRole.USER,
+            role=MessageRole.ASSISTANT
+            if message.role == "assistant"
+            else MessageRole.USER,
             content=message.content,
         )
         memory.put(llama_message)
-        chat_history.append(llama_message)
 
-    agent = build_agent()
+    agent: FunctionAgent = build_agent()
     workflow_handler = agent.run(
         user_msg=latest_message.content,
-        chat_history=chat_history,
         memory=memory,
     )
     workflow_result = await workflow_handler

@@ -12,7 +12,9 @@ from llama_index.vector_stores.postgres import PGVectorStore
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--database-url", required=True, help="Postgres connection string")
+    parser.add_argument(
+        "--database-url", required=True, help="Postgres connection string"
+    )
     parser.add_argument(
         "--model",
         default="text-embedding-3-large",
@@ -69,7 +71,9 @@ def main() -> None:
 
     remaining = args.limit
     while remaining is None or remaining > 0:
-        batch_size = args.batch_size if remaining is None else min(args.batch_size, remaining)
+        batch_size = (
+            args.batch_size if remaining is None else min(args.batch_size, remaining)
+        )
         with psycopg.connect(args.database_url, autocommit=False) as conn:
             with conn.cursor() as cur:
                 cur.execute(
@@ -94,8 +98,17 @@ def main() -> None:
             break
 
         documents: List[Document] = []
-        for random_key, persian_name, english_name, extra_features, category_id, brand_id in rows:
-            text_parts = [part for part in [persian_name, english_name, extra_features] if part]
+        for (
+            random_key,
+            persian_name,
+            english_name,
+            extra_features,
+            category_id,
+            brand_id,
+        ) in rows:
+            text_parts = [
+                part for part in [persian_name, english_name, extra_features] if part
+            ]
             text = " \n".join(text_parts) if text_parts else random_key
             documents.append(
                 Document(

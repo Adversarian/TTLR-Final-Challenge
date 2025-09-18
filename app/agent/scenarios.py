@@ -7,7 +7,9 @@ from typing import Optional
 
 from app.models.chat import ChatResponse
 
-_BASE_KEY_PATTERN = re.compile(r"return\s+base\s+random\s+key\s*:\s*(.+)", re.IGNORECASE)
+_BASE_KEY_PATTERN = re.compile(
+    r"return\s+base\s+random\s+key\s*:\s*(.+)", re.IGNORECASE
+)
 _MEMBER_KEY_PATTERN = re.compile(
     r"return\s+member\s+random\s+key\s*:\s*(.+)", re.IGNORECASE
 )

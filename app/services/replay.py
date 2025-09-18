@@ -24,7 +24,9 @@ def _entry_path(log_dir: str, chat_id: str) -> Path:
     return base / f"{_safe_chat_id(chat_id)}.jsonl"
 
 
-def log_interaction(request: ChatRequest, response: ChatResponse, log_dir: str | None) -> None:
+def log_interaction(
+    request: ChatRequest, response: ChatResponse, log_dir: str | None
+) -> None:
     if not log_dir:
         return
 
