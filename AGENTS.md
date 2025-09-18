@@ -1,6 +1,7 @@
 # Agent Operating Manual
 
 ## Non-Negotiable Ground Rules
+
 - Orchestrate every LLM or embedding interaction through LlamaIndex primitives (FunctionAgent, Workflows, Memories, Observability) and consult upstream docs when in doubt.
 - Manage Python dependencies exclusively with `uv`; do **not** invoke `pip` directly.
 - Ship and run the service from a single Docker image. The chatbot must boot correctly when launched with `docker run` against Docker Engine.

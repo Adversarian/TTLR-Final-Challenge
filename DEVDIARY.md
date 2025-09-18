@@ -91,3 +91,4 @@
 - Recorded the organizer's latest directive to drop Docker Compose in favor of a single-container deployment.
 - Updated `AGENTS.md` to enforce the new runtime constraint while preserving logging and LlamaIndex requirements.
 - Planned documentation updates to explain how operators should mount host volumes for replay logs with `docker run`.
+
