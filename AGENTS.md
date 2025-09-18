@@ -1,63 +1,47 @@
 # Agent Operating Manual
 
 ## Non-Negotiable Ground Rules
-- Use LlamaIndex (FunctionAgent + Workflows + Memory) for every LLM interaction; follow its best practices for orchestration.
-- Manage Python dependencies exclusively with `uv`; do not shell out to `pip`.
-- Package the service with a single Dockerfile that starts the FastAPI API directly (no docker-compose runtime in production).
-- Evolve the assistant scenario by scenario, ensuring new behavior never breaks previously satisfied scenarios.
-- Capture complete, replayable judge conversations locally; combine Phoenix traces with local log files plus a replay utility.
-- Expose an autonomous `/chat` endpoint matching the problem specification; any extra endpoints must remain optional.
-- Keep the implementation focused, minimal, and maintainable—no gratuitous abstractions or flair under time pressure.
-- Re-check upstream documentation for all third-party libraries whenever APIs are used to avoid stale assumptions.
-- Assume the judge/dev infra may change; keep env-driven endpoints (e.g., `CODEX_REMOTE_API_URL`) up to date before testing.
-- Keep Arize Phoenix instrumentation active by supplying the appropriate server URL and token in deployment environments.
+- Orchestrate every LLM interaction with LlamaIndex (FunctionAgent, Workflows, Memory, or other first-class primitives) and follow the latest best practices/documentation when integrating tools.
+- Manage Python dependencies exclusively with `uv`; never invoke `pip` or edit `requirements.txt`-style files.
+- Ship the assistant inside a `compose.yaml` stack: the FastAPI service must build from our Dockerfile and come up with `docker compose up` on Docker Engine.
+- Grow capabilities scenario by scenario without regressing behaviors that were already working in earlier scenarios.
+- Capture complete judge conversations for replay: use Arize Phoenix traces **and** append-only JSONL logs stored locally under `REPLAY_LOG_DIR`, plus provide tooling to replay them offline.
+- Expose a fully functional `/chat` endpoint that matches the problem specification; any additional endpoints are optional helpers and must not be required by judges.
+- Keep the implementation lean, well-structured, and easy to maintain—avoid unnecessary abstractions or flourish.
 
 ## Reference Notes
 - Re-read `PROBLEMSTATEMENT.md` whenever the user reports updates; never edit that file.
-- Competition data sources: Searches, Base Views, Final Clicks, Base Products, Members with rich metadata for retrieval/ranking.
-- Evaluation scenarios (0-9) cover echo tests, direct lookup, attribute Q&A, seller pricing, guided discovery, comparisons, vision, and ranking.
-- Responses must use `{message, base_random_keys, member_random_keys}` per spec with tight cardinality constraints per scenario.
-- Deployment deliverables include a public `/chat` domain, a 5-minute architecture video, and repository access for judges.
+- Competition datasets include Searches, Base Views, Final Clicks, Base Products, Members, Shops, Categories, Brands, and Cities tables.
+- Evaluation scenarios (0-9) cover sanity checks, direct lookup, attribute Q&A, seller pricing, guided discovery, comparisons, vision tasks, similarity, and ranking. New scenarios build on prior requirements.
+- Responses must follow `{"message", "base_random_keys", "member_random_keys"}` with the cardinality limits described in the scenarios.
 
 ## Operational Constraints & Tactics
-- Budget: 30-second per-request timeout and limited API credits; minimize chain-of-thought length and token usage.
-- Prefer deterministic SQL against the catalog DB over full RAG; use LLMs to synthesize precise SQL and interpret results.
-- Delay emitting `base_random_keys`/`member_random_keys` until absolutely confident—judge may halt on first non-null value.
-- Keep responses terse while satisfying scenario-specific formatting to preserve latency headroom.
-- Qdrant vector store is optional; introduce only if similarity search materially helps (e.g., scenario eight). Until then rely on structured filters.
-- Tier models by task criticality: use stronger reasoning models sparingly where accuracy gates success; default to cheaper/faster models otherwise.
+- Budget: assume a 30-second timeout per request and finite API credits—control token usage and prompt length.
+- Prefer deterministic Postgres queries (SQL) for catalog retrieval; reserve heavier RAG or embedding flows for cases where structured search falls short.
+- Delay emitting `base_random_keys`/`member_random_keys` until confident—judges may stop the conversation on the first non-null array.
+- Keep Phoenix instrumentation configurable via environment variables. If Phoenix is unavailable, execution must still succeed while logging locally.
+- Maintain `.env`/environment-driven configuration (database URLs, OpenAI keys, Phoenix settings, replay log directory, etc.).
 
 ## Data & AI Stack Decisions
-- Torob datasets arrive as Parquet exports; `scripts/ingest.py` loads them into Postgres. Data directory is configurable per environment.
-- SQL remains the primary retrieval surface. Optional OpenAI embeddings can pre-filter candidates before SQL when recall demands it.
-- All LLM and embedding calls use OpenAI models, configured via `OPENAI_*` environment variables.
-- Product search pipeline layers deterministic filters, Postgres full-text search, trigram similarity, and pgvector semantic search to secure robust matches.
+- Torob datasets ship as Parquet archives; `scripts/ingest.py` loads them into Postgres (run with `uv run python -m scripts.ingest`).
+- SQL is the primary retrieval surface. Introduce pgvector/Qdrant similarity search only when it materially improves recall (e.g., scenarios eight or nine).
+- All LLM and embedding calls go through LlamaIndex with provider credentials supplied via env vars (e.g., `OPENAI_API_KEY`).
 
 ## Telemetry & Replay Strategy
-- Implement dual logging: structured telemetry via Arize Phoenix instrumentation (LLM/embedding/agent traces) and append-only JSONL conversation transcripts.
-- Replay tooling (pytest) will consume the JSONL logs to mimic judge conversations, including LLM-judged scenarios.
-- Production must mount a persistent volume at `REPLAY_LOG_DIR` so conversation logs survive restarts.
+- Dual logging is mandatory: Arize Phoenix traces plus structured JSONL transcripts per conversation stored in `REPLAY_LOG_DIR`.
+- Provide pytest-style replay tooling that can read the JSONL logs and simulate conversations locally.
+- Ensure containers mount a persistent volume at `REPLAY_LOG_DIR` so logs survive restarts.
 
 ## Implementation Notes
-- FastAPI lives in `app/` and the `/chat` endpoint now invokes a single Pydantic-AI agent (`app/agent/assistant.py`).
-- FastAPI lives in `app/` and the `/chat` endpoint now invokes a LlamaIndex workflow/FunctionAgent combo (`app/agent/assistant.py`).
-- `app/config.py` loads runtime settings from env vars; `app/server.py` starts uvicorn with those values via `uv run`.
-- `app/db.py` initialises a psycopg connection pool on startup for tools to query Postgres safely.
-- `scripts/download_data.py` fetches the Torob archive from Google Drive (via `gdown`) and optionally extracts it for ingestion.
-- `scripts/ingest.py` provides a reusable CLI (`uv run python -m scripts.ingest`) for Postgres loading, auto-casting all-null columns where needed.
-- `start.sh` bootstraps dataset download/ingestion when `TOROB_BOOTSTRAP=1`, then launches the API via `uv run`.
-  It also defaults `UV_LINK_MODE=copy` to avoid hardlink warnings inside containers.
-- Docker builds copy `pyproject.toml` plus `uv.lock` and run `uv sync --locked` so container deps mirror the locked versions.
-- Phoenix observability is initialised in `app/main.py`; misconfiguration simply bypasses tracing.
-- `scripts/embed_products.py` (run via `uv run python -m scripts.embed_products`) populates pgvector embeddings for base products to power semantic search.
-- `scripts/embed_products.py` (run via `uv run python -m scripts.embed_products`) tokenizes persian/english names plus feature text and stores them in pgvector using LlamaIndex abstractions.
-- Docker builds copy `pyproject.toml` plus `uv.lock` and run `uv sync --locked` so container deps mirror the locked versions.
+- FastAPI application code lives under `app/`; `/chat` should delegate to a LlamaIndex-powered agent workflow defined there.
+- `app/config.py` reads runtime settings (database DSN, Phoenix URL/token, replay log directory, etc.).
+- `app/db.py` (or equivalent) manages the Postgres connection pool for tools to execute SQL safely.
+- `start.sh` remains the container entrypoint. It may bootstrap datasets when `TOROB_BOOTSTRAP=1` and finally launches the API via `uv run`.
+- Docker builds must copy `pyproject.toml` and `uv.lock` then execute `uv sync --locked` so container deps mirror the lockfile.
 
 ## Deployment Notes
-- Production hosting uses the Dockerfile-only flow; the container launches the API directly through `uv run python -m app.server`.
-- External services such as Postgres are provisioned separately. The app reads connection strings from env vars (or `.env` when local).
-- `.env.template` lists required configuration including database URL, OpenAI keys, and replay log directory.
-- `.dockerignore` trims build contexts; defaults for `APP_HOST`/`APP_PORT` are baked into the Dockerfile.
-- `dev-compose.yaml` exists for local development only—never shipped to production.
-- `start.sh` is the container entrypoint; set `TOROB_BOOTSTRAP=1`, `TOROB_DRIVE_ID`, and `TOROB_DATA_DIR` to seed data automatically during deployment.
-- Remote validation is performed against `CODEX_REMOTE_API_URL`; keep this env var synced with the active dev endpoint.
+- `compose.yaml` defines the API service (and any local dev dependencies). Production still uses Docker Engine with this compose stack.
+- External services such as Postgres and Phoenix are provisioned separately; the app reads connection strings from environment variables (or `.env` locally).
+- `.dockerignore` should keep build contexts minimal. Defaults for `APP_HOST`/`APP_PORT` may live in the Dockerfile or config.
+- `start.sh` is the container entrypoint; ensure it respects environment overrides for host/port and logging paths.
+- Keep `CODEX_REMOTE_API_URL` (or similar remote validation URLs) up to date before remote testing.

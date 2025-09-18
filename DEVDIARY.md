@@ -81,3 +81,8 @@
 # Entry #19: Remote Testing Pivot
 - Dropped local compose files; testing now targets the remote dev environment exposed through `CODEX_REMOTE_API_URL`.
 - Documented new env variables (`PHOENIX_SERVER_URL`, `CODEX_REMOTE_API_URL`) in templates and manuals to keep deployments aligned.
+
+# Entry #20: Ground Rules Refresh
+- Re-read `PROBLEMSTATEMENT.md` to realign on scenario expectations and response format.
+- Updated `AGENTS.md` to capture the newly mandated compose-based deployment flow and reaffirm core operating constraints.
+- Logged requirement to maintain dual logging (Phoenix + JSONL) with replay tooling at the forefront of upcoming implementation work.
