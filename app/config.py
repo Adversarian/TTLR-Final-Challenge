@@ -14,6 +14,7 @@ class Settings:
     openai_embed_model: str | None = None
     openai_base_url: str | None = None
     openai_reasoning_effort: str | None = None
+    logfire_api_key: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -28,6 +29,7 @@ class Settings:
             openai_embed_model=os.getenv("OPENAI_EMBED_MODEL"),
             openai_base_url=os.getenv("OPENAI_BASE_URL"),
             openai_reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT"),
+            logfire_api_key=os.getenv("LOGFIRE_API_KEY"),
         )
 
 

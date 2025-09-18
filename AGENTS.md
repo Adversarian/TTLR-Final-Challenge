@@ -9,6 +9,7 @@
 - Expose an autonomous `/chat` endpoint matching the problem specification; any extra endpoints must remain optional.
 - Keep the implementation focused, minimal, and maintainable—no gratuitous abstractions or flair under time pressure.
 - Re-check upstream documentation for all third-party libraries whenever APIs are used to avoid stale assumptions.
+- Assume the judge/dev infra may change; keep env-driven endpoints (e.g., `CODEX_REMOTE_API_URL`) up to date before testing.
 
 ## Reference Notes
 - Re-read `PROBLEMSTATEMENT.md` whenever the user reports updates; never edit that file.
@@ -29,9 +30,10 @@
 - Torob datasets arrive as Parquet exports; `scripts/ingest.py` loads them into Postgres. Data directory is configurable per environment.
 - SQL remains the primary retrieval surface. Optional OpenAI embeddings can pre-filter candidates before SQL when recall demands it.
 - All LLM and embedding calls use OpenAI models, configured via `OPENAI_*` environment variables.
+- Product search pipeline layers deterministic filters, Postgres full-text search, trigram similarity, and pgvector semantic search to secure robust matches.
 
 ## Telemetry & Replay Strategy
-- Implement dual logging: structured telemetry via Logfire/OpenAI tooling and append-only JSONL conversation transcripts.
+- Implement dual logging: structured telemetry via Logfire instrumentation (FastAPI, psycopg, OpenAI, Pydantic-AI) and append-only JSONL conversation transcripts.
 - Replay tooling (pytest) will consume the JSONL logs to mimic judge conversations, including LLM-judged scenarios.
 - Production must mount a persistent volume at `REPLAY_LOG_DIR` so conversation logs survive restarts.
 
@@ -44,6 +46,9 @@
 - `start.sh` bootstraps dataset download/ingestion when `TOROB_BOOTSTRAP=1`, then launches the API via `uv run`.
   It also defaults `UV_LINK_MODE=copy` to avoid hardlink warnings inside containers.
 - Docker builds copy `pyproject.toml` plus `uv.lock` and run `uv sync --locked` so container deps mirror the locked versions.
+- Logfire instrumentation is initialised in `app/main.py`; failures degrade gracefully with warnings.
+- `scripts/embed_products.py` (run via `uv run python -m scripts.embed_products`) populates pgvector embeddings for base products to power semantic search.
+- Docker builds copy `pyproject.toml` plus `uv.lock` and run `uv sync --locked` so container deps mirror the locked versions.
 
 ## Deployment Notes
 - Production hosting uses the Dockerfile-only flow; the container launches the API directly through `uv run python -m app.server`.
@@ -52,3 +57,4 @@
 - `.dockerignore` trims build contexts; defaults for `APP_HOST`/`APP_PORT` are baked into the Dockerfile.
 - `dev-compose.yaml` exists for local development only—never shipped to production.
 - `start.sh` is the container entrypoint; set `TOROB_BOOTSTRAP=1`, `TOROB_DRIVE_ID`, and `TOROB_DATA_DIR` to seed data automatically during deployment.
+- Remote validation is performed against `CODEX_REMOTE_API_URL`; keep this env var synced with the active dev endpoint.

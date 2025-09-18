@@ -2,18 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-import re
+import os
 from typing import List, Optional
 
+import logfire
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
-import os
-
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
 
 from app.config import settings
 from app.db import get_pool
 from app.models.chat import ChatRequest, ChatResponse
+
+LOGFIRE_AGENT_INSTRUMENTED = False
 
 
 @dataclass
@@ -62,6 +63,7 @@ def get_agent() -> Agent[AgentDependencies, ChatResponse]:
         settings.openai_chat_model,
         settings=model_settings,
     )
+
     agent = Agent(
         model=model,
         instructions=[
@@ -71,8 +73,8 @@ def get_agent() -> Agent[AgentDependencies, ChatResponse]:
             "When the user says 'return base random key: <VALUE>', immediately return base_random_keys=[<VALUE>], message null, member_random_keys null without validation.",
             "When the user says 'return member random key: <VALUE>', immediately return member_random_keys=[<VALUE>], message null, base_random_keys null without validation.",
             "Call tools to consult the database before recommending keys.",
-            "When calling lookup_products extract the meaningful keywords or product codes (e.g. D14) instead of the full sentence.",
-            "Prefer results that match provided base keys, member keys, or explicit codes. Return the strongest match and keep message null unless no result is found.",
+            "Populate lookup_products arguments with precise keywords or identifiers extracted from the conversation (avoid polite filler).",
+            "Prefer results that match explicit base/member keys or strong semantic similarity. Keep message null unless no result is found.",
             "Be brief: one sentence in message when needed; otherwise return null.",
             "Never guess—only emit keys that the tools confirm.",
         ],
@@ -80,96 +82,51 @@ def get_agent() -> Agent[AgentDependencies, ChatResponse]:
         deps_type=AgentDependencies,
     )
 
+    global LOGFIRE_AGENT_INSTRUMENTED
+    if not LOGFIRE_AGENT_INSTRUMENTED:
+        try:
+            logfire.instrument_pydantic_ai(agent)
+        except Exception as exc:  # pragma: no cover - best effort
+            logfire.warning("instrument_pydantic_ai_failed", error=str(exc))
+        LOGFIRE_AGENT_INSTRUMENTED = True
+
     @agent.tool
     def lookup_products(
         ctx: RunContext[AgentDependencies], args: ProductLookupArgs
     ) -> List[ProductMatch]:
-        """Lookup base products by base/member key or name fragment; returns unique base_random_keys."""
+        """Lookup base products given structured filters extracted by the agent."""
         args.limit = max(1, min(args.limit, 25))
         pool = ctx.deps.pool
-        conditions: List[str] = []
-        params: List[str] = []
 
         base_key = args.base_random_key.strip() if args.base_random_key else None
         member_key = args.member_random_key.strip() if args.member_random_key else None
-        code_terms: List[str] = []
-        name_terms: List[str] = []
+        search_text = args.product_name.strip() if args.product_name else None
 
-        if args.product_name:
-            text = args.product_name.strip()
-            code_terms = list(
-                {
-                    match.upper()
-                    for match in re.findall(
-                        r"(?:کد|code)[:\-\s]*([A-Za-z0-9\-]{2,})",
-                        text,
-                        flags=re.IGNORECASE,
-                    )
-                }
-            )
-            tokens = re.findall(r"[\wآ-ی]+", text)
-            stop_words = {
-                "لطفا",
-                "لطفاً",
-                "لطفا،",
-                "لطفاً،",
-                "برای",
-                "من",
-                "را",
-                "میخواهم",
-                "می‌خواهم",
-                "خواهید",
-                "می",
-                "یک",
-                "ا",
-                "را",
-                "تهیه",
-                "کنید",
-                "بفرمایید",
-                "خواهشا",
-                "خواهشاً",
-            }
-            for token in tokens:
-                if len(token) <= 2:
-                    continue
-                normalized = token.lower()
-                if normalized in stop_words:
-                    continue
-                name_terms.append(token)
+        filters: List[str] = []
+        params: List[str] = []
 
         if base_key:
-            conditions.append("bp.random_key = %s")
+            filters.append("bp.random_key = %s")
             params.append(base_key)
         if member_key:
-            conditions.append("m.random_key = %s")
+            filters.append("m.random_key = %s")
             params.append(member_key)
+        if search_text:
+            filters.append(
+                "(bp.persian_name ILIKE %s OR bp.english_name ILIKE %s)"
+            )
+            like = f"%{search_text}%"
+            params.extend([like, like])
 
-        if code_terms:
-            code_clause_parts: List[str] = []
-            for code in code_terms:
-                like = f"%{code}%"
-                code_clause_parts.append(
-                    "bp.persian_name ILIKE %s OR bp.english_name ILIKE %s"
-                )
-                params.extend([like, like])
-            conditions.append("(" + " OR ".join(code_clause_parts) + ")")
-
-        if name_terms:
-            name_clause_parts: List[str] = []
-            for term in name_terms[:4]:  # cap to avoid huge OR clause
-                like = f"%{term}%"
-                name_clause_parts.append(
-                    "bp.persian_name ILIKE %s OR bp.english_name ILIKE %s"
-                )
-                params.extend([like, like])
-            conditions.append("(" + " OR ".join(name_clause_parts) + ")")
-
-        if not conditions:
+        if not filters:
             return []
 
-        where_clause = f"WHERE {' AND '.join(conditions)}"
-        query = f"""
-            SELECT DISTINCT bp.random_key, bp.persian_name, bp.english_name
+        where_clause = f"WHERE {' AND '.join(filters)}"
+        base_query = f"""
+            SELECT DISTINCT bp.random_key,
+                            bp.persian_name,
+                            bp.english_name,
+                            m.random_key AS member_random_key
             FROM base_products bp
             LEFT JOIN members m ON m.base_random_key = bp.random_key
             {where_clause}
@@ -179,34 +136,121 @@ def get_agent() -> Agent[AgentDependencies, ChatResponse]:
         params_with_limit = params + [args.limit]
 
         results: List[ProductMatch] = []
+        seen: set[str] = set()
+
+        def add_rows(rows, default_tag: str) -> None:
+            for record in rows:
+                random_key, persian, english, member_match, *_ = record
+                if random_key in seen:
+                    continue
+                matched_via = default_tag
+                if base_key and random_key == base_key:
+                    matched_via = "base_random_key"
+                elif member_key and member_match and member_match == member_key:
+                    matched_via = "member_random_key"
+                results.append(
+                    ProductMatch(
+                        random_key=random_key,
+                        persian_name=persian,
+                        english_name=english,
+                        matched_via=matched_via,
+                    )
+                )
+                seen.add(random_key)
+
         with pool.connection() as conn:
             with conn.cursor() as cursor:
-                cursor.execute(query, params_with_limit)
-                for record in cursor.fetchall():
-                    matched_via = "candidate"
-                    random_key = record[0]
-                    full_name = (record[1] or "") + " " + (record[2] or "")
-                    if base_key and random_key == base_key:
-                        matched_via = "base_random_key"
-                    elif member_key and member_key:
-                        matched_via = "member_random_key"
-                    elif code_terms and any(
-                        code in full_name.upper() for code in code_terms
-                    ):
-                        matched_via = "code_match"
-                    elif name_terms and any(term in full_name for term in name_terms):
-                        matched_via = "name_match"
-                    elif args.product_name:
-                        matched_via = "name_match"
+                cursor.execute(base_query, params_with_limit)
+                add_rows(cursor.fetchall(), "name_match" if search_text else "candidate")
 
-                    results.append(
-                        ProductMatch(
-                            random_key=random_key,
-                            persian_name=record[1],
-                            english_name=record[2],
-                            matched_via=matched_via,
-                        )
+                if search_text and len(results) < args.limit:
+                    fts_query = """
+                        SELECT DISTINCT bp.random_key,
+                                        bp.persian_name,
+                                        bp.english_name,
+                                        m.random_key AS member_random_key,
+                                        ts_rank_cd(
+                                            to_tsvector('simple', coalesce(bp.persian_name,'') || ' ' || coalesce(bp.english_name,'')),
+                                            plainto_tsquery('simple', %s)
+                                        ) AS rank
+                        FROM base_products bp
+                        LEFT JOIN members m ON m.base_random_key = bp.random_key
+                        WHERE to_tsvector('simple', coalesce(bp.persian_name,'') || ' ' || coalesce(bp.english_name,'')) @@ plainto_tsquery('simple', %s)
+                        ORDER BY rank DESC
+                        LIMIT %s
+                    """
+                    cursor.execute(fts_query, [search_text, search_text, args.limit])
+                    add_rows(cursor.fetchall(), "fts")
+
+                if search_text and len(results) < args.limit:
+                    trigram_query = """
+                        SELECT DISTINCT bp.random_key,
+                                        bp.persian_name,
+                                        bp.english_name,
+                                        m.random_key AS member_random_key,
+                                        GREATEST(
+                                            similarity(coalesce(bp.persian_name,''), %s),
+                                            similarity(coalesce(bp.english_name,''), %s)
+                                        ) AS score
+                        FROM base_products bp
+                        LEFT JOIN members m ON m.base_random_key = bp.random_key
+                        WHERE GREATEST(
+                            similarity(coalesce(bp.persian_name,''), %s),
+                            similarity(coalesce(bp.english_name,''), %s)
+                        ) > 0.1
+                        ORDER BY score DESC
+                        LIMIT %s
+                    """
+                    cursor.execute(
+                        trigram_query,
+                        [search_text, search_text, search_text, search_text, args.limit],
                     )
+                    add_rows(cursor.fetchall(), "fuzzy")
+
+                embedding_literal: Optional[str] = None
+                if (
+                    search_text
+                    and settings.openai_embed_model
+                    and len(results) < args.limit
+                ):
+                    try:
+                        client = _get_embedding_client()
+                        embedding = client.embeddings.create(
+                            model=settings.openai_embed_model,
+                            input=search_text,
+                        )
+                        embedding_literal = _vector_literal(
+                            embedding.data[0].embedding
+                        )
+                    except Exception as exc:  # pragma: no cover - best effort
+                        logfire.warning("embedding_query_failed", error=str(exc))
+
+                if embedding_literal and len(results) < args.limit:
+                    vector_query = """
+                        SELECT DISTINCT bp.random_key,
+                                        bp.persian_name,
+                                        bp.english_name,
+                                        m.random_key AS member_random_key,
+                                        1 - (pe.embedding <=> %s::vector) AS similarity
+                        FROM product_embeddings pe
+                        JOIN base_products bp ON bp.random_key = pe.random_key
+                        LEFT JOIN members m ON m.base_random_key = bp.random_key
+                        ORDER BY similarity DESC
+                        LIMIT %s
+                    """
+                    cursor.execute(vector_query, [embedding_literal, args.limit])
+                    add_rows(cursor.fetchall(), "semantic")
+
+        priority = {
+            "base_random_key": 0,
+            "member_random_key": 1,
+            "semantic": 2,
+            "fts": 3,
+            "fuzzy": 4,
+            "name_match": 5,
+            "candidate": 6,
+        }
+        results.sort(key=lambda r: priority.get(r.matched_via, 7))
         return results
 
     return agent
@@ -236,3 +280,30 @@ async def run_chat(request: ChatRequest) -> ChatResponse:
 
     result = await agent.run(user_prompt=user_prompt, deps=deps)
     return result.output
+
+
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover - optional dependency
+    OpenAI = None  # type: ignore
+
+
+_embedding_client = None
+
+
+def _get_embedding_client():
+    global _embedding_client
+    if OpenAI is None:
+        raise RuntimeError("openai package is not available")
+    if _embedding_client is None:
+        client_kwargs = {}
+        if settings.openai_api_key:
+            client_kwargs["api_key"] = settings.openai_api_key
+        if settings.openai_base_url:
+            client_kwargs["base_url"] = settings.openai_base_url
+        _embedding_client = OpenAI(**client_kwargs)
+    return _embedding_client
+
+
+def _vector_literal(vector: List[float]) -> str:
+    return "[" + ",".join(f"{value:.6f}" for value in vector) + "]"

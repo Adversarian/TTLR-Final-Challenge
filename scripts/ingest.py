@@ -5,6 +5,7 @@ import pathlib
 
 import polars as pl
 from polars.datatypes import List as PlList
+import psycopg
 
 TABLE_FILE_MAP = {
     "base_products": "base_products.parquet",
@@ -88,6 +89,12 @@ def main() -> None:
     data_dir: pathlib.Path = args.data_dir
     if not data_dir.exists():
         raise SystemExit(f"Data directory {data_dir} does not exist")
+
+    with psycopg.connect(args.database_url, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
+            cur.execute("CREATE EXTENSION IF NOT EXISTS fuzzystrmatch")
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     for table in args.tables:
         if table not in TABLE_FILE_MAP:
