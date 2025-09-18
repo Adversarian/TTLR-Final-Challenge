@@ -81,3 +81,8 @@
 # Entry #19: Remote Testing Pivot
 - Dropped local compose files; testing now targets the remote dev environment exposed through `CODEX_REMOTE_API_URL`.
 - Documented new env variables (`PHOENIX_SERVER_URL`, `CODEX_REMOTE_API_URL`) in templates and manuals to keep deployments aligned.
+
+# Entry #20: Scenario 1-3 Alignment & Ops Refresh
+- Re-baselined requirements with new ground rules (compose-first deployment, single-tool agent, replayable logs) and rewrote `AGENTS.md` accordingly.
+- Planned enriched Postgres hybrid search tool that hydrates features + seller stats in one call to satisfy scenarios 1-3 without extra tool hops.
+- Scheduled compose stack (app + pgvector Postgres) and JSONL replay logging utility to keep local debugging aligned with judge conversations.
