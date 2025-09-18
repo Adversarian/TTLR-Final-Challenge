@@ -22,6 +22,7 @@
 - The agent should call at most **one** tool per turn; design prompts/tools to make extra calls unnecessary.
 - Honour scenario-zero sanity checks explicitly (ping/pong and key echoes) before invoking the agent loop.
 - Emit `base_random_keys`/`member_random_keys` only when confident—judge stops on the first non-null key list.
+- When orchestrating conversations via `FunctionAgent.run`, pass either `chat_history` or `memory` (not both). LlamaIndex applies memory state internally, and providing chat history alongside it will override that memory context (see <https://developers.llamaindex.ai/python/framework/module_guides/deploying/agents/memory/>).
 
 ## Logging & Replay
 - Log directory is driven by `REPLAY_LOG_DIR`. Each `/chat` call appends `{timestamp, request, response}` JSONL entries named by `chat_id`.

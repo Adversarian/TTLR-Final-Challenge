@@ -96,3 +96,7 @@
 - Split `app/agent/assistant.py` into focused modules (`models`, `retrieval`, `tools`, `runtime`, `scenarios`) and re-exported a slim compatibility shim to keep public imports stable.
 - Centralised the lookup aggregation logic in `gather_product_contexts`, making the function tool reusable and easier to unit test for future scenarios.
 - Replaced the deprecated Arize integration with OpenInference's `LlamaIndexInstrumentor` plus Phoenix OTLP wiring in `app/main.py`, and added logging so telemetry hiccups don't crash startup.
+
+# Entry #23: Memory Usage Adjustment
+- Documented the need to choose between supplying `chat_history` or `memory` when calling `FunctionAgent.run`; passing both causes the chat history to replace stored memory.
+- Reviewed the latest LlamaIndex memory guidance to confirm correct usage (<https://developers.llamaindex.ai/python/framework/module_guides/deploying/agents/memory/>).
