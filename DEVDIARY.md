@@ -96,3 +96,7 @@
 - Split `app/agent/assistant.py` into focused modules (`models`, `retrieval`, `tools`, `runtime`, `scenarios`) and re-exported a slim compatibility shim to keep public imports stable.
 - Centralised the lookup aggregation logic in `gather_product_contexts`, making the function tool reusable and easier to unit test for future scenarios.
 - Replaced the deprecated Arize integration with OpenInference's `LlamaIndexInstrumentor` plus Phoenix OTLP wiring in `app/main.py`, and added logging so telemetry hiccups don't crash startup.
+
+# Entry #23: Workflow Memory Note
+- Documented the LlamaIndex guidance that `agent.run` should not receive both `chat_history` and `memory`, since the history payload supersedes memory state when combined.
+- Captured the reference link in `AGENTS.md` to keep runtime changes aligned with the official memory guidance.

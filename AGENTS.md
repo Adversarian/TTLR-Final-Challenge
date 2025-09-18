@@ -22,6 +22,7 @@
 - The agent should call at most **one** tool per turn; design prompts/tools to make extra calls unnecessary.
 - Honour scenario-zero sanity checks explicitly (ping/pong and key echoes) before invoking the agent loop.
 - Emit `base_random_keys`/`member_random_keys` only when confident—judge stops on the first non-null key list.
+- When invoking the workflow interface, rely on either chat history *or* memory—never both—because passing `chat_history` alongside `memory` causes the history payload to override memory state. Reference: https://developers.llamaindex.ai/python/framework/module_guides/deploying/agents/memory/
 
 ## Logging & Replay
 - Log directory is driven by `REPLAY_LOG_DIR`. Each `/chat` call appends `{timestamp, request, response}` JSONL entries named by `chat_id`.
