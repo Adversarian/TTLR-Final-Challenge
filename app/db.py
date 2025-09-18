@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterator
 
 from psycopg_pool import ConnectionPool
 from psycopg.rows import dict_row

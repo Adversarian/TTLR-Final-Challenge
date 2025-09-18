@@ -33,7 +33,6 @@ def configure_llama_index() -> None:
         tracer_configs.append(
             ArizePhoenixTracerConfig(
                 server_url=settings.phoenix_server_url,
-                api_key=settings.phoenix_api_key,
                 project_name=settings.phoenix_project,
             )
         )

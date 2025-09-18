@@ -14,8 +14,6 @@ class Settings:
     openai_base_url: str | None = None
     phoenix_server_url: str | None = None
     phoenix_project: str | None = None
-    phoenix_api_key: str | None = None
-    codex_remote_api_url: str | None = None
     replay_log_dir: str | None = None
 
     @classmethod
@@ -31,8 +29,6 @@ class Settings:
             openai_base_url=os.getenv("OPENAI_BASE_URL"),
             phoenix_server_url=os.getenv("PHOENIX_SERVER_URL"),
             phoenix_project=os.getenv("PHOENIX_PROJECT_NAME"),
-            phoenix_api_key=os.getenv("PHOENIX_API_KEY"),
-            codex_remote_api_url=os.getenv("CODEX_REMOTE_API_URL"),
             replay_log_dir=os.getenv("REPLAY_LOG_DIR"),
         )
 
