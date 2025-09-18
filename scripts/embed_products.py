@@ -77,7 +77,9 @@ def main() -> None:
                     SELECT bp.random_key,
                            bp.persian_name,
                            bp.english_name,
-                           bp.extra_features
+                           bp.extra_features,
+                           bp.category_id,
+                           bp.brand_id
                     FROM base_products bp
                     LEFT JOIN product_embeddings pe ON pe.random_key = bp.random_key
                     WHERE pe.random_key IS NULL
@@ -92,7 +94,7 @@ def main() -> None:
             break
 
         documents: List[Document] = []
-        for random_key, persian_name, english_name, extra_features in rows:
+        for random_key, persian_name, english_name, extra_features, category_id, brand_id in rows:
             text_parts = [part for part in [persian_name, english_name, extra_features] if part]
             text = " \n".join(text_parts) if text_parts else random_key
             documents.append(
@@ -103,6 +105,8 @@ def main() -> None:
                         "random_key": random_key,
                         "persian_name": persian_name,
                         "english_name": english_name,
+                        "category_id": category_id,
+                        "brand_id": brand_id,
                         "match_type": "semantic",
                     },
                 )

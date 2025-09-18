@@ -1,63 +1,40 @@
 # Agent Operating Manual
 
-## Non-Negotiable Ground Rules
-- Use LlamaIndex (FunctionAgent + Workflows + Memory) for every LLM interaction; follow its best practices for orchestration.
-- Manage Python dependencies exclusively with `uv`; do not shell out to `pip`.
-- Package the service with a single Dockerfile that starts the FastAPI API directly (no docker-compose runtime in production).
-- Evolve the assistant scenario by scenario, ensuring new behavior never breaks previously satisfied scenarios.
-- Capture complete, replayable judge conversations locally; combine Phoenix traces with local log files plus a replay utility.
-- Expose an autonomous `/chat` endpoint matching the problem specification; any extra endpoints must remain optional.
-- Keep the implementation focused, minimal, and maintainable—no gratuitous abstractions or flair under time pressure.
-- Re-check upstream documentation for all third-party libraries whenever APIs are used to avoid stale assumptions.
-- Assume the judge/dev infra may change; keep env-driven endpoints (e.g., `CODEX_REMOTE_API_URL`) up to date before testing.
-- Keep Arize Phoenix instrumentation active by supplying the appropriate server URL and token in deployment environments.
+## Core Ground Rules
+- Every LLM interaction must run through LlamaIndex (FunctionAgent/Workflows/Memories) and respect the latest official docs.
+- Manage Python dependencies exclusively with `uv`; never shell out to `pip`.
+- Ship and run the service via Docker + `compose.yaml`. The FastAPI app lives in a single image and can be started with
+  `docker compose up` on any Docker Engine host.
+- Grow the assistant scenario-by-scenario. Each new behaviour must keep earlier scenarios (0-3 already in scope) working.
+- Capture complete, replayable conversations: stream traces to Arize Phoenix **and** persist JSONL logs locally with a replay utility.
+- Expose an autonomous `/chat` endpoint that satisfies the problem spec; auxiliary endpoints are fine but optional.
+- Keep the implementation lean, readable, and production-friendly—no flair, no premature abstractions.
 
-## Reference Notes
-- Re-read `PROBLEMSTATEMENT.md` whenever the user reports updates; never edit that file.
-- Competition data sources: Searches, Base Views, Final Clicks, Base Products, Members with rich metadata for retrieval/ranking.
-- Evaluation scenarios (0-9) cover echo tests, direct lookup, attribute Q&A, seller pricing, guided discovery, comparisons, vision, and ranking.
-- Responses must use `{message, base_random_keys, member_random_keys}` per spec with tight cardinality constraints per scenario.
-- Deployment deliverables include a public `/chat` domain, a 5-minute architecture video, and repository access for judges.
+## Retrieval & Data Strategy
+- Source of truth is Postgres. Enable `pg_trgm`, `fuzzystrmatch`, and `vector` extensions during ingestion.
+- Product search relies on a hybrid PGVector store (semantic + lexical). Fall back to trigram SQL only if the vector store is empty.
+- Embedding payload = Persian name, English name, and extra features text. Metadata stores random_key, names, brand/category ids, and match type.
+- Scenario 1-3 answers come from deterministic SQL over base products, members, shops, and categories (aggregated seller stats + parsed features).
+- Keep tool outputs richly structured so the LLM can answer with a single tool call per user turn.
 
-## Operational Constraints & Tactics
-- Budget: 30-second per-request timeout and limited API credits; minimize chain-of-thought length and token usage.
-- Prefer deterministic SQL against the catalog DB over full RAG; use LLMs to synthesize precise SQL and interpret results.
-- Delay emitting `base_random_keys`/`member_random_keys` until absolutely confident—judge may halt on first non-null value.
-- Keep responses terse while satisfying scenario-specific formatting to preserve latency headroom.
-- Qdrant vector store is optional; introduce only if similarity search materially helps (e.g., scenario eight). Until then rely on structured filters.
-- Tier models by task criticality: use stronger reasoning models sparingly where accuracy gates success; default to cheaper/faster models otherwise.
+## Agent Behaviour
+- Default tool set: a single `lookup_products` FunctionTool returning product context (features + seller stats) for fuzzy queries, base keys, or member keys.
+- The agent should call at most **one** tool per turn; design prompts/tools to make extra calls unnecessary.
+- Honour scenario-zero sanity checks explicitly (ping/pong and key echoes) before invoking the agent loop.
+- Emit `base_random_keys`/`member_random_keys` only when confident—judge stops on the first non-null key list.
 
-## Data & AI Stack Decisions
-- Torob datasets arrive as Parquet exports; `scripts/ingest.py` loads them into Postgres. Data directory is configurable per environment.
-- SQL remains the primary retrieval surface. Optional OpenAI embeddings can pre-filter candidates before SQL when recall demands it.
-- All LLM and embedding calls use OpenAI models, configured via `OPENAI_*` environment variables.
-- Product search pipeline layers deterministic filters, Postgres full-text search, trigram similarity, and pgvector semantic search to secure robust matches.
+## Logging & Replay
+- Log directory is driven by `REPLAY_LOG_DIR`. Each `/chat` call appends `{timestamp, request, response}` JSONL entries named by `chat_id`.
+- Provide a simple `scripts/replay_chat.py` CLI that replays a stored chat locally (optionally posting back to a running API).
+- Mount the replay log directory as a Docker volume so judge conversations persist between restarts.
 
-## Telemetry & Replay Strategy
-- Implement dual logging: structured telemetry via Arize Phoenix instrumentation (LLM/embedding/agent traces) and append-only JSONL conversation transcripts.
-- Replay tooling (pytest) will consume the JSONL logs to mimic judge conversations, including LLM-judged scenarios.
-- Production must mount a persistent volume at `REPLAY_LOG_DIR` so conversation logs survive restarts.
+## Deployment & Ops
+- `compose.yaml` defines at least two services: the FastAPI app container and a pgvector-backed Postgres database.
+- `start.sh` handles optional dataset download/ingestion and (when enabled) kicks off embedding generation via `scripts.embed_products`.
+- `.env.template` must stay up to date with every new required env var (database, OpenAI, Phoenix, logging, bootstrap flags, etc.).
+- Always run project scripts with `uv run` to inherit the managed virtual environment.
 
-## Implementation Notes
-- FastAPI lives in `app/` and the `/chat` endpoint now invokes a single Pydantic-AI agent (`app/agent/assistant.py`).
-- FastAPI lives in `app/` and the `/chat` endpoint now invokes a LlamaIndex workflow/FunctionAgent combo (`app/agent/assistant.py`).
-- `app/config.py` loads runtime settings from env vars; `app/server.py` starts uvicorn with those values via `uv run`.
-- `app/db.py` initialises a psycopg connection pool on startup for tools to query Postgres safely.
-- `scripts/download_data.py` fetches the Torob archive from Google Drive (via `gdown`) and optionally extracts it for ingestion.
-- `scripts/ingest.py` provides a reusable CLI (`uv run python -m scripts.ingest`) for Postgres loading, auto-casting all-null columns where needed.
-- `start.sh` bootstraps dataset download/ingestion when `TOROB_BOOTSTRAP=1`, then launches the API via `uv run`.
-  It also defaults `UV_LINK_MODE=copy` to avoid hardlink warnings inside containers.
-- Docker builds copy `pyproject.toml` plus `uv.lock` and run `uv sync --locked` so container deps mirror the locked versions.
-- Phoenix observability is initialised in `app/main.py`; misconfiguration simply bypasses tracing.
-- `scripts/embed_products.py` (run via `uv run python -m scripts.embed_products`) populates pgvector embeddings for base products to power semantic search.
-- `scripts/embed_products.py` (run via `uv run python -m scripts.embed_products`) tokenizes persian/english names plus feature text and stores them in pgvector using LlamaIndex abstractions.
-- Docker builds copy `pyproject.toml` plus `uv.lock` and run `uv sync --locked` so container deps mirror the locked versions.
-
-## Deployment Notes
-- Production hosting uses the Dockerfile-only flow; the container launches the API directly through `uv run python -m app.server`.
-- External services such as Postgres are provisioned separately. The app reads connection strings from env vars (or `.env` when local).
-- `.env.template` lists required configuration including database URL, OpenAI keys, and replay log directory.
-- `.dockerignore` trims build contexts; defaults for `APP_HOST`/`APP_PORT` are baked into the Dockerfile.
-- `dev-compose.yaml` exists for local development only—never shipped to production.
-- `start.sh` is the container entrypoint; set `TOROB_BOOTSTRAP=1`, `TOROB_DRIVE_ID`, and `TOROB_DATA_DIR` to seed data automatically during deployment.
-- Remote validation is performed against `CODEX_REMOTE_API_URL`; keep this env var synced with the active dev endpoint.
+## Documentation Discipline
+- Update `DEVDIARY.md` after notable design or architecture changes.
+- Defer `README.md` authoring until the codebase stabilises; keep notes in `AGENTS.md` meanwhile.
+- Re-read `PROBLEMSTATEMENT.md` whenever the user signals an update; never edit that file.

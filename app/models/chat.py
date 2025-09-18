@@ -6,6 +6,9 @@ from pydantic import BaseModel, Field
 class ChatMessage(BaseModel):
     type: Literal["text"]
     content: str = Field(..., description="Body of the user or assistant message.")
+    role: Literal["user", "assistant"] = Field(
+        default="user", description="Role of the speaker for memory replay."
+    )
 
 
 class ChatRequest(BaseModel):

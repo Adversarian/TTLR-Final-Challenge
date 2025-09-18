@@ -6,6 +6,7 @@ set -euo pipefail
 : "${LOG_LEVEL:=info}"
 : "${TOROB_BOOTSTRAP:=0}"
 : "${TOROB_DATA_DIR:=/data/torob}"
+: "${TOROB_AUTO_EMBED:=0}"
 
 export UV_LINK_MODE="${UV_LINK_MODE:-copy}"
 
@@ -53,6 +54,19 @@ if [ "$TOROB_BOOTSTRAP" = "1" ]; then
     fi
   else
     echo "[bootstrap] DATABASE_URL not set; skipping ingestion"
+  fi
+
+  if [ "$TOROB_AUTO_EMBED" = "1" ]; then
+    if [ -z "${DATABASE_URL:-}" ]; then
+      echo "[bootstrap] DATABASE_URL not set; cannot build embeddings" >&2
+    elif [ -z "${OPENAI_API_KEY:-}" ]; then
+      echo "[bootstrap] OPENAI_API_KEY not set; skipping embedding generation" >&2
+    else
+      echo "[bootstrap] Generating product embeddings"
+      uv run python -m scripts.embed_products \
+        --database-url "$DATABASE_URL" \
+        --model "${OPENAI_EMBED_MODEL:-text-embedding-3-large}"
+    fi
   fi
 fi
 
