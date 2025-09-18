@@ -86,3 +86,8 @@
 - Re-baselined requirements with new ground rules (compose-first deployment, single-tool agent, replayable logs) and rewrote `AGENTS.md` accordingly.
 - Planned enriched Postgres hybrid search tool that hydrates features + seller stats in one call to satisfy scenarios 1-3 without extra tool hops.
 - Scheduled compose stack (app + pgvector Postgres) and JSONL replay logging utility to keep local debugging aligned with judge conversations.
+
+# Entry #21: Lookup Tool Hardening
+- Updated `lookup_products` so the tool validates raw dict payloads via `ProductLookupArgs.model_validate` before clamping limits, preventing attribute errors during agent calls.
+- Documented the tool parameters in a Google-style docstring to improve function selection while keeping validation centralized.
+- Removed `compose.yaml` in favour of the Dockerfile-only deployment path now required by operations.
