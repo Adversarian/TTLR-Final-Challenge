@@ -91,3 +91,8 @@
 - Updated `lookup_products` so the tool validates raw dict payloads via `ProductLookupArgs.model_validate` before clamping limits, preventing attribute errors during agent calls.
 - Documented the tool parameters in a Google-style docstring to improve function selection while keeping validation centralized.
 - Removed `compose.yaml` in favour of the Dockerfile-only deployment path now required by operations.
+
+# Entry #22: Assistant Refactor & Observability Refresh
+- Split `app/agent/assistant.py` into focused modules (`models`, `retrieval`, `tools`, `runtime`, `scenarios`) and re-exported a slim compatibility shim to keep public imports stable.
+- Centralised the lookup aggregation logic in `gather_product_contexts`, making the function tool reusable and easier to unit test for future scenarios.
+- Replaced the deprecated Arize integration with OpenInference's `LlamaIndexInstrumentor` plus Phoenix OTLP wiring in `app/main.py`, and added logging so telemetry hiccups don't crash startup.

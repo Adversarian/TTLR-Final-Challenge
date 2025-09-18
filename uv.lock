@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform == 'win32'",
@@ -1685,6 +1685,24 @@ wheels = [
 ]
 
 [[package]]
+name = "openinference-instrumentation-llama-index"
+version = "4.3.5"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "openinference-instrumentation" },
+    { name = "openinference-semantic-conventions" },
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-instrumentation" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "typing-extensions" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0b/f7/f84f661c24ebece221de828e2c576f9ee8d777827541e10106290d0cb381/openinference_instrumentation_llama_index-4.3.5.tar.gz", hash = "sha256:a6092fbb0e745d222c647589c20616d6a2db94ff25b6119103e9c8d415f79518", size = 60717, upload-time = "2025-09-12T16:54:52.741Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/bc/76a294ed2a060dabd96cc943ae78f7a2b5cd166d0b76ec4a777596751697/openinference_instrumentation_llama_index-4.3.5-py3-none-any.whl", hash = "sha256:1803c5a782a1f51b61a011a833068c719a5319616bb6317b6c02d7dbcbd36ce6", size = 28816, upload-time = "2025-09-12T16:54:51.829Z" },
+]
+
+[[package]]
 name = "openinference-semantic-conventions"
 version = "0.1.21"
 source = { registry = "https://pypi.org/simple" }
@@ -1765,6 +1783,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/5d/e3/6e320aeb24f951449e73867e53c55542bebbaf24faeee7623ef677d66736/opentelemetry_exporter_otlp_proto_http-1.37.0.tar.gz", hash = "sha256:e52e8600f1720d6de298419a802108a8f5afa63c96809ff83becb03f874e44ac", size = 17281, upload-time = "2025-09-11T10:29:04.844Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e9/e9/70d74a664d83976556cec395d6bfedd9b85ec1498b778367d5f93e373397/opentelemetry_exporter_otlp_proto_http-1.37.0-py3-none-any.whl", hash = "sha256:54c42b39945a6cc9d9a2a33decb876eabb9547e0dcb49df090122773447f1aef", size = 19576, upload-time = "2025-09-11T10:28:46.726Z" },
+]
+
+[[package]]
+name = "opentelemetry-instrumentation"
+version = "0.58b0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "opentelemetry-api" },
+    { name = "opentelemetry-semantic-conventions" },
+    { name = "packaging" },
+    { name = "wrapt" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/36/7c307d9be8ce4ee7beb86d7f1d31027f2a6a89228240405a858d6e4d64f9/opentelemetry_instrumentation-0.58b0.tar.gz", hash = "sha256:df640f3ac715a3e05af145c18f527f4422c6ab6c467e40bd24d2ad75a00cb705", size = 31549, upload-time = "2025-09-11T11:42:14.084Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d4/db/5ff1cd6c5ca1d12ecf1b73be16fbb2a8af2114ee46d4b0e6d4b23f4f4db7/opentelemetry_instrumentation-0.58b0-py3-none-any.whl", hash = "sha256:50f97ac03100676c9f7fc28197f8240c7290ca1baa12da8bfbb9a1de4f34cc45", size = 33019, upload-time = "2025-09-11T11:41:00.624Z" },
 ]
 
 [[package]]
@@ -2912,6 +2945,7 @@ dependencies = [
     { name = "llama-index" },
     { name = "llama-index-vector-stores-postgres" },
     { name = "openai" },
+    { name = "openinference-instrumentation-llama-index" },
     { name = "polars" },
     { name = "psycopg", extra = ["binary", "pool"] },
     { name = "uvicorn", extra = ["standard"] },
@@ -2926,6 +2960,7 @@ requires-dist = [
     { name = "llama-index", specifier = ">=0.10.60" },
     { name = "llama-index-vector-stores-postgres", specifier = ">=0.1.3" },
     { name = "openai", specifier = ">=1.40" },
+    { name = "openinference-instrumentation-llama-index", specifier = ">=4.3.5" },
     { name = "polars", specifier = ">=0.20" },
     { name = "psycopg", extras = ["binary", "pool"], specifier = ">=3.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.28" },
