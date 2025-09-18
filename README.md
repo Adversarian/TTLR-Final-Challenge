@@ -1,2 +1,2 @@
 # TTLR-Final-Challenge
-Torob Turbo LLM Rush Final Challenge - Arian Tashakkor
+"Confuse thyself, confuse the enemy." - Confucius
