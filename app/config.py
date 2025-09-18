@@ -10,11 +10,12 @@ class Settings:
     database_url: str | None = None
     openai_api_key: str | None = None
     openai_chat_model: str = "gpt-4o-mini"
-    openai_reasoning_model: str | None = None
     openai_embed_model: str | None = None
     openai_base_url: str | None = None
-    openai_reasoning_effort: str | None = None
-    logfire_api_key: str | None = None
+    phoenix_server_url: str | None = None
+    phoenix_project: str | None = None
+    phoenix_api_key: str | None = None
+    codex_remote_api_url: str | None = None
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -25,11 +26,12 @@ class Settings:
             database_url=os.getenv("DATABASE_URL"),
             openai_api_key=os.getenv("OPENAI_API_KEY"),
             openai_chat_model=os.getenv("OPENAI_CHAT_MODEL", "gpt-4o-mini"),
-            openai_reasoning_model=os.getenv("OPENAI_REASONING_MODEL"),
             openai_embed_model=os.getenv("OPENAI_EMBED_MODEL"),
             openai_base_url=os.getenv("OPENAI_BASE_URL"),
-            openai_reasoning_effort=os.getenv("OPENAI_REASONING_EFFORT"),
-            logfire_api_key=os.getenv("LOGFIRE_API_KEY"),
+            phoenix_server_url=os.getenv("PHOENIX_SERVER_URL"),
+            phoenix_project=os.getenv("PHOENIX_PROJECT_NAME"),
+            phoenix_api_key=os.getenv("PHOENIX_API_KEY"),
+            codex_remote_api_url=os.getenv("CODEX_REMOTE_API_URL"),
         )
 
 

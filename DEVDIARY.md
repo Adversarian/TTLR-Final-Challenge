@@ -71,13 +71,13 @@
 - Updated Docker build to copy `uv.lock` and run `uv sync --locked` ensuring container installs match the resolved versions.
 
 # Entry #17: Documentation Discipline
-- Agreed to consult latest upstream docs for Pydantic-AI, psycopg, OpenAI SDKs, etc., before using new APIs to avoid stale assumptions.
+- Agreed to consult latest upstream docs for LlamaIndex, psycopg, OpenAI SDKs, etc., before using new APIs to avoid stale assumptions.
 
 # Entry #18: Advanced Search & Telemetry
 - Replaced brittle heuristics with an agent-driven lookup pipeline layered over deterministic filters, full-text search, trigram similarity, and pgvector semantic retrieval.
-- Instrumented FastAPI, psycopg, OpenAI, and Pydantic-AI via Logfire with graceful fallbacks so telemetry streams to the shared dashboard when configured.
+- Instrumented FastAPI, psycopg, OpenAI, and LlamaIndex via Arize Phoenix so traces flow to our shared observability stack.
 - Introduced the `product_embeddings` table and an embedding ingestion script so pgvector can serve semantic matches efficiently.
 
 # Entry #19: Remote Testing Pivot
 - Dropped local compose files; testing now targets the remote dev environment exposed through `CODEX_REMOTE_API_URL`.
-- Documented new env variables (`LOGFIRE_API_KEY`, `CODEX_REMOTE_API_URL`) in templates and manuals to keep deployments aligned.
+- Documented new env variables (`PHOENIX_SERVER_URL`, `CODEX_REMOTE_API_URL`) in templates and manuals to keep deployments aligned.

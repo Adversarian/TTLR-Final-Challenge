@@ -1,10 +1,13 @@
-"""Populate pgvector embeddings for base products."""
+"""Populate pgvector embeddings for base products via LlamaIndex."""
 
 import argparse
-from typing import Iterable
+from typing import List
+from urllib.parse import urlparse, parse_qs
 
 import psycopg
-from openai import OpenAI
+from llama_index.core import Document
+from llama_index.embeddings.openai import OpenAIEmbedding
+from llama_index.vector_stores.postgres import PGVectorStore
 
 
 def parse_args() -> argparse.Namespace:
@@ -35,48 +38,46 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def ensure_table(cur: psycopg.Cursor, dimension: int) -> None:
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS product_embeddings (
-            random_key TEXT PRIMARY KEY REFERENCES base_products(random_key) ON DELETE CASCADE,
-            embedding vector(%s)
-        )
-        """,
-        (dimension,),
+def _vector_store(database_url: str) -> PGVectorStore:
+    parsed = urlparse(database_url)
+    query = parse_qs(parsed.query)
+    return PGVectorStore.from_params(
+        database=parsed.path.lstrip("/"),
+        host=parsed.hostname or "localhost",
+        port=parsed.port or 5432,
+        user=parsed.username or query.get("user", [None])[0],
+        password=parsed.password or query.get("password", [None])[0],
+        table_name="product_embeddings",
+        hybrid_search=True,
+        text_search_config="simple",
     )
 
 
-def vector_literal(values: Iterable[float]) -> str:
-    return "[" + ",".join(f"{v:.6f}" for v in values) + "]"
+def _truncate_embeddings(database_url: str) -> None:
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute("TRUNCATE TABLE IF EXISTS product_embeddings")
 
 
 def main() -> None:
     args = parse_args()
-    client = OpenAI()
+    store = _vector_store(args.database_url)
+    embed_model = OpenAIEmbedding(model=args.model)
 
-    with psycopg.connect(args.database_url, autocommit=False) as conn:
-        with conn.cursor() as cur:
-            sample_embedding = client.embeddings.create(
-                model=args.model, input="torob sample"
-            ).data[0].embedding
-            dimension = len(sample_embedding)
-            ensure_table(cur, dimension)
-            conn.commit()
+    if args.refresh_all:
+        _truncate_embeddings(args.database_url)
 
-        if args.refresh_all:
-            with conn.cursor() as cur:
-                cur.execute("TRUNCATE TABLE product_embeddings")
-            conn.commit()
-
-        remaining = args.limit
-        while remaining is None or remaining > 0:
-            batch_size = args.batch_size if remaining is None else min(args.batch_size, remaining)
+    remaining = args.limit
+    while remaining is None or remaining > 0:
+        batch_size = args.batch_size if remaining is None else min(args.batch_size, remaining)
+        with psycopg.connect(args.database_url, autocommit=False) as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT bp.random_key,
-                           coalesce(bp.persian_name,'') || ' ' || coalesce(bp.english_name,'') || ' ' || coalesce(bp.extra_features,'') AS text
+                           bp.persian_name,
+                           bp.english_name,
+                           bp.extra_features
                     FROM base_products bp
                     LEFT JOIN product_embeddings pe ON pe.random_key = bp.random_key
                     WHERE pe.random_key IS NULL
@@ -87,27 +88,30 @@ def main() -> None:
                 )
                 rows = cur.fetchall()
 
-            if not rows:
-                break
+        if not rows:
+            break
 
-            texts = [row[1] or row[0] for row in rows]
-            embeddings = client.embeddings.create(model=args.model, input=texts)
+        documents: List[Document] = []
+        for random_key, persian_name, english_name, extra_features in rows:
+            text_parts = [part for part in [persian_name, english_name, extra_features] if part]
+            text = " \n".join(text_parts) if text_parts else random_key
+            documents.append(
+                Document(
+                    id_=random_key,
+                    text=text,
+                    metadata={
+                        "random_key": random_key,
+                        "persian_name": persian_name,
+                        "english_name": english_name,
+                        "match_type": "semantic",
+                    },
+                )
+            )
 
-            with conn.cursor() as cur:
-                for row, embed in zip(rows, embeddings.data):
-                    literal = vector_literal(embed.embedding)
-                    cur.execute(
-                        """
-                        INSERT INTO product_embeddings (random_key, embedding)
-                        VALUES (%s, %s::vector)
-                        ON CONFLICT (random_key) DO UPDATE SET embedding = EXCLUDED.embedding
-                        """,
-                        (row[0], literal),
-                    )
-            conn.commit()
+        store.add_documents(documents, embed_model=embed_model, show_progress=True)
 
-            if remaining is not None:
-                remaining -= len(rows)
+        if remaining is not None:
+            remaining -= len(documents)
 
 
 if __name__ == "__main__":
