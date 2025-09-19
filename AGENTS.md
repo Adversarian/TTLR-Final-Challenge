@@ -25,9 +25,15 @@
 - Build a CLI or script to replay stored logs against the agent locally without hitting external services.
 
 ## Pending Decisions / TODOs
-- Finalize schema for ingestion tables and confirm indexes for FTS/trigram queries.
-- Define Python project layout (likely FastAPI + Pydantic-AI integration) and service entrypoint.
-- Draft list of dependencies to pin via `uv`.
-- Plan automated tests covering protocol sanity checks and core scenarios.
+- Add automated tests validating agent behaviours (sanity guards, tool fan-out, numeric formatting).
+- Implement end-to-end scenario fixtures once data access is available.
+- Evaluate performance/latency monitoring hooks (Logfire integration optional).
 
 Update this file whenever significant architectural decisions are made.
+
+## Implementation Notes (2025-03-01)
+- **Service stack**: FastAPI app in `app/main.py` orchestrates `pydantic_ai.Agent` configured via `app/agent/agent.py`. Runtime dependencies are read from `app/config.py`; database access relies on a shared `asyncpg` pool (`app/db.py`).
+- **Pydantic-AI wiring**: Tools live in `app/agent/tools.py` and expose ProductResolve, FeatureLookup, and SellerStats exactly per spec. System prompt is dynamically assembled in `app/agent/prompt.py` so the LLM sees cached base keys.
+- **Memory & logging**: `app/memory.py` stores TTL-bound chat state (history + last base key). Structured JSONL logs are emitted through `app/logging.py`; replay utility exists at `scripts/replay.py` supporting both inspection and optional HTTP replays.
+- **Data ingestion**: `app/ingestion.py` downloads the parquet bundle with `gdown`, materialises required tables (brands, categories, shops, members, base_products), builds search text/feature flattening, and ensures FTS/trigram + seller indexes. Docker `CMD` runs ingestion before booting uvicorn so the image is self-sufficient.
+- **Environment**: `.env.template` lists `DATABASE_URL`, `PRIMARY_MODEL`, and optional logging/data variables. Dependencies are pinned in `pyproject.toml`; Docker installs them with `uv pip install --system .`.
