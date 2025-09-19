@@ -100,3 +100,8 @@
 # Entry #23: Memory Usage Adjustment
 - Documented the need to choose between supplying `chat_history` or `memory` when calling `FunctionAgent.run`; passing both causes the chat history to replace stored memory.
 - Reviewed the latest LlamaIndex memory guidance to confirm correct usage (<https://developers.llamaindex.ai/python/framework/module_guides/deploying/agents/memory/>).
+
+# Entry #24: Ingestion Compatibility
+- Investigated bootstrap failures traced to Polars tightening struct handling in `write_database`.
+- Added a dataframe normaliser that JSON-encodes struct columns and fixes list inner types before loading via ADBC.
+- Confirmed the ingestion CLI still exposes its command-line interface after the refactor.
