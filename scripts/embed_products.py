@@ -63,7 +63,15 @@ def _vector_store(database_url: str, embed_dim: int) -> PGVectorStore:
 def _truncate_embeddings(database_url: str) -> None:
     with psycopg.connect(database_url, autocommit=True) as conn:
         with conn.cursor() as cur:
-            cur.execute("TRUNCATE TABLE product_embeddings")
+            cur.execute("SELECT to_regclass('public.product_embeddings')")
+            if cur.fetchone()[0] is not None:
+                cur.execute("TRUNCATE TABLE public.product_embeddings")
+
+
+def _table_exists(conn, table: str, schema: str = "public") -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT to_regclass(%s)", (f"{schema}.{table}",))
+        return cur.fetchone()[0] is not None
 
 
 def main() -> None:
@@ -81,22 +89,39 @@ def main() -> None:
         )
         with psycopg.connect(args.database_url, autocommit=False) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT bp.random_key,
-                        bp.persian_name,
-                        bp.english_name,
-                        bp.extra_features,
-                        bp.category_id,
-                        bp.brand_id
-                    FROM base_products bp
-                    LEFT JOIN product_embeddings pe ON pe.doc_id = bp.random_key
-                    WHERE pe.doc_id IS NULL
-                    ORDER BY bp.random_key
-                    LIMIT %s
-                    """,
-                    (batch_size,),
-                )
+                if _table_exists(conn, "product_embeddings", "public"):
+                    cur.execute(
+                        """
+                        SELECT bp.random_key,
+                            bp.persian_name,
+                            bp.english_name,
+                            bp.extra_features,
+                            bp.category_id,
+                            bp.brand_id
+                        FROM base_products bp
+                        LEFT JOIN product_embeddings pe ON pe.doc_id = bp.random_key
+                        WHERE pe.doc_id IS NULL
+                        ORDER BY bp.random_key
+                        LIMIT %s
+                        """,
+                        (batch_size,),
+                    )
+                else:
+                    # First-ever batch: table not created yet; take any N base products
+                    cur.execute(
+                        """
+                        SELECT bp.random_key,
+                            bp.persian_name,
+                            bp.english_name,
+                            bp.extra_features,
+                            bp.category_id,
+                            bp.brand_id
+                        FROM base_products bp
+                        ORDER BY bp.random_key
+                        LIMIT %s
+                        """,
+                        (batch_size,),
+                    )
                 rows = cur.fetchall()
 
         if not rows:
