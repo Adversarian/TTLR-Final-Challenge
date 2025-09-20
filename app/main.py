@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .agent import AgentDependencies, get_agent
 from .db import get_session
 
+
 class ChatMessage(BaseModel):
     """Represents a single message exchanged in a chat session."""
 

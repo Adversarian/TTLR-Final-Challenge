@@ -228,9 +228,7 @@ def _lookup_feature(
     best_score = 0.0
 
     for name, value in features:
-        score = SequenceMatcher(
-            None, _normalize_text(name), normalized_query
-        ).ratio()
+        score = SequenceMatcher(None, _normalize_text(name), normalized_query).ratio()
         if score > best_score:
             best_score = score
             best_name = name

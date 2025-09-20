@@ -69,7 +69,7 @@ class Settings:
 def _default_postgres_host() -> str:
     """Return the preferred PostgreSQL host for the current environment."""
 
-    return os.getenv("POSTGRES_LOCAL_HOST") or _require_env("POSTGRES_HOST")
+    return _require_env("POSTGRES_HOST")
 
 
 def get_settings() -> Settings:
