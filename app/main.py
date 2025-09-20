@@ -2,14 +2,18 @@
 
 from typing import List, Literal, Optional
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from .agent import AgentDependencies, get_agent
+from .db import get_session
 
 class ChatMessage(BaseModel):
     """Represents a single message exchanged in a chat session."""
 
-    type: Literal["text"]
+    type: Literal["text", "image"]
     content: str
 
 
@@ -45,7 +49,9 @@ def _extract_key(command_prefix: str, message: str) -> Optional[str]:
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest) -> ChatResponse:
+async def chat_endpoint(
+    request: ChatRequest, session: AsyncSession = Depends(get_session)
+) -> ChatResponse:
     """Handle chat interactions with the assistant.
 
     For scenario 0 the handler returns deterministic responses that allow the
@@ -55,7 +61,8 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
     if not request.messages:
         return ChatResponse(message="No messages provided.")
 
-    latest_content = request.messages[-1].content.strip()
+    latest_message = request.messages[-1]
+    latest_content = latest_message.content.strip()
     latest_content_lower = latest_content.lower()
 
     if latest_content_lower == "ping" or request.chat_id == "sanity-check-ping":
@@ -69,7 +76,36 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
     if member_key:
         return ChatResponse(member_random_keys=[member_key])
 
-    return ChatResponse(message="Scenario handling not implemented yet.")
+    if latest_message.type == "image":
+        return ChatResponse(
+            message="Image messages are not supported yet. Please send text instructions."
+        )
+
+    text_messages = [
+        message.content.strip()
+        for message in request.messages
+        if message.type == "text" and message.content.strip()
+    ]
+    if not text_messages:
+        return ChatResponse(message="No textual message found in the request.")
+
+    aggregated_prompt = "\n\n".join(text_messages)
+
+    agent = get_agent()
+    deps = AgentDependencies(session=session)
+
+    try:
+        result = await agent.run(user_prompt=aggregated_prompt, deps=deps)
+    except Exception as exc:  # pragma: no cover - defensive logging path
+        raise HTTPException(status_code=500, detail="Agent execution failed.") from exc
+
+    reply = result.output.clipped()
+
+    return ChatResponse(
+        message=reply.message,
+        base_random_keys=reply.base_random_keys or None,
+        member_random_keys=reply.member_random_keys or None,
+    )
 
 
 __all__ = [
