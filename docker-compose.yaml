@@ -1,7 +1,29 @@
 services:
+  db:
+    image: pgvector/pgvector:pg17-trixie
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
   api:
     build: .
     env_file:
       - .env
+    environment:
+      POSTGRES_HOST: db
+      TOROB_DATA_DIR: /app/data/torob
+    depends_on:
+      - db
     ports:
       - "8000:8000"
+    volumes:
+      - torob_data:/app/data/torob
+
+volumes:
+  postgres_data:
+  torob_data:
