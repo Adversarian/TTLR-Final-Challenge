@@ -1,0 +1,18 @@
+[project]
+name = "ttlr-final-challenge"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.16.5",
+    "asyncpg>=0.30.0",
+    "fastapi>=0.116.2",
+    "gdown>=5.2.0",
+    "pgvector>=0.4.1",
+    "psycopg[binary]>=3.2.10",
+    "pyarrow>=21.0.0",
+    "python-dotenv>=1.1.1",
+    "sqlalchemy>=2.0",
+    "uvicorn>=0.36.0",
+]
