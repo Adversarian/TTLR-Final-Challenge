@@ -71,6 +71,7 @@ def run_migrations() -> None:
     config = Config(str(ALEMBIC_INI))
     config.set_main_option("sqlalchemy.url", settings.sync_database_url)
     command.upgrade(config, "head")
+    logging.getLogger().setLevel(logging.INFO)
 
 
 def load_dataset() -> None:
@@ -91,7 +92,9 @@ def main() -> None:
     run_migrations()
 
     if settings.import_marker_path.exists():
-        LOGGER.info("Import marker %s found, skipping dataset load", settings.import_marker_path)
+        LOGGER.info(
+            "Import marker %s found, skipping dataset load", settings.import_marker_path
+        )
         return
 
     archive_path = download_archive()

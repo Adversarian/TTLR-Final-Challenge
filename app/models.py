@@ -5,7 +5,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, JSON, Numeric, Text, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    Numeric,
+    Text,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -49,7 +60,9 @@ class Shop(Base):
     __tablename__ = "shops"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    city_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("cities.id"), nullable=False)
+    city_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cities.id"), nullable=False
+    )
     score: Mapped[float] = mapped_column(Numeric(2, 1), nullable=False)
     has_warranty: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
@@ -90,7 +103,9 @@ class Member(Base):
     base_random_key: Mapped[str] = mapped_column(
         Text, ForeignKey("base_products.random_key", ondelete="CASCADE"), nullable=False
     )
-    shop_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("shops.id"), nullable=False)
+    shop_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("shops.id"), nullable=False
+    )
     price: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
     base: Mapped[BaseProduct] = relationship(back_populates="members")
@@ -151,7 +166,9 @@ class FinalClick(Base):
     base_view_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("base_views.id", ondelete="CASCADE"), nullable=False
     )
-    shop_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("shops.id"), nullable=False)
+    shop_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("shops.id"), nullable=False
+    )
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=text("now()"), nullable=False
     )

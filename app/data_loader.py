@@ -200,7 +200,11 @@ def _transform_final_click(row: Row) -> Row:
 TABLE_LOADERS: Dict[str, tuple[str, Any, TransformFn]] = {
     "cities": ("cities.parquet", models.City.__table__, _transform_city),
     "brands": ("brands.parquet", models.Brand.__table__, _transform_brand),
-    "categories": ("categories.parquet", models.Category.__table__, _transform_category),
+    "categories": (
+        "categories.parquet",
+        models.Category.__table__,
+        _transform_category,
+    ),
     "shops": ("shops.parquet", models.Shop.__table__, _transform_shop),
     "base_products": (
         "base_products.parquet",
@@ -209,7 +213,11 @@ TABLE_LOADERS: Dict[str, tuple[str, Any, TransformFn]] = {
     ),
     "members": ("members.parquet", models.Member.__table__, _transform_member),
     "searches": ("searches.parquet", models.Search.__table__, _transform_search),
-    "base_views": ("base_views.parquet", models.BaseView.__table__, _transform_base_view),
+    "base_views": (
+        "base_views.parquet",
+        models.BaseView.__table__,
+        _transform_base_view,
+    ),
     "final_clicks": (
         "final_clicks.parquet",
         models.FinalClick.__table__,
