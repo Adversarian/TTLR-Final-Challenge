@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
+from decimal import Decimal
 from functools import lru_cache
 import os
+from statistics import mean
 from typing import List, Sequence
 
 import logfire
@@ -17,7 +20,7 @@ from pydantic_ai.settings import ModelSettings
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .models import BaseProduct
+from .models import BaseProduct, City, Member, Shop
 
 
 @dataclass
@@ -66,6 +69,96 @@ class FeatureLookupResult(BaseModel):
     )
 
 
+class CitySellerStatistics(BaseModel):
+    """Aggregated seller metrics for a specific city."""
+
+    city_id: int | None = Field(None, description="Identifier of the city.")
+    city_name: str | None = Field(None, description="Display name of the city.")
+    offer_count: int = Field(..., ge=0, description="Total offers from this city.")
+    distinct_shops: int = Field(
+        ..., ge=0, description="Number of unique shops contributing offers."
+    )
+    shops_with_warranty: int = Field(
+        ..., ge=0, description="Offers backed by Torob warranty."
+    )
+    shops_without_warranty: int = Field(
+        ..., ge=0, description="Offers without Torob warranty."
+    )
+    min_price: int | None = Field(
+        None, description="Cheapest price observed in this city."
+    )
+    max_price: int | None = Field(
+        None, description="Most expensive price observed in this city."
+    )
+    average_price: float | None = Field(
+        None, description="Average offer price for this city."
+    )
+    min_score: float | None = Field(
+        None, description="Lowest shop score observed in this city."
+    )
+    max_score: float | None = Field(
+        None, description="Highest shop score observed in this city."
+    )
+    average_score: float | None = Field(
+        None, description="Average shop score for this city."
+    )
+
+
+class SellerStatistics(BaseModel):
+    """Aggregated marketplace data for a base product."""
+
+    base_random_key: str = Field(..., description="Target base product key.")
+    statistic: str = Field(
+        ..., description="Requested statistic key that maps to the numeric value."
+    )
+    city: str | None = Field(
+        None,
+        description="Optional Persian city name used to narrow down the statistic.",
+    )
+    value: float | int | None = Field(
+        None, description="Numeric value for the requested statistic."
+    )
+    total_offers: int = Field(..., ge=0, description="Total number of offers.")
+    distinct_shops: int = Field(
+        ..., ge=0, description="Number of unique shops listing the product."
+    )
+    shops_with_warranty: int = Field(
+        ..., ge=0, description="Offers sold with Torob warranty."
+    )
+    shops_without_warranty: int = Field(
+        ..., ge=0, description="Offers sold without Torob warranty."
+    )
+    min_price: int | None = Field(
+        None, description="Cheapest price offered across all shops."
+    )
+    max_price: int | None = Field(
+        None, description="Most expensive price offered across all shops."
+    )
+    average_price: float | None = Field(
+        None, description="Average price across all offers."
+    )
+    min_score: float | None = Field(
+        None, description="Lowest shop score for the product offers."
+    )
+    max_score: float | None = Field(
+        None, description="Highest shop score for the product offers."
+    )
+    average_score: float | None = Field(
+        None, description="Average shop score across offers."
+    )
+    num_cities_with_offers: int = Field(
+        ..., ge=0, description="Number of cities that list the product."
+    )
+    available_statistics: List[str] = Field(
+        default_factory=list,
+        description="List of supported statistic keys for the request.",
+    )
+    city_stats: List[CitySellerStatistics] = Field(
+        default_factory=list,
+        description="Optional per-city breakdowns supporting the statistic.",
+    )
+
+
 class AgentReply(BaseModel):
     """Structured response emitted by the agent."""
 
@@ -82,6 +175,13 @@ class AgentReply(BaseModel):
         max_length=10,
         description="Member product keys relevant to the response (at most 10).",
     )
+    numeric_answer: Decimal | None = Field(
+        None,
+        description=(
+            "When responding with a numeric seller statistic, populate this field "
+            "with the exact value so the API layer can enforce digit-only replies."
+        ),
+    )
 
     def clipped(self) -> "AgentReply":
         """Return a copy trimmed to the API list length limits."""
@@ -90,6 +190,7 @@ class AgentReply(BaseModel):
             message=self.message,
             base_random_keys=self.base_random_keys[:10],
             member_random_keys=self.member_random_keys[:10],
+            numeric_answer=self.numeric_answer,
         )
 
 
@@ -291,6 +392,222 @@ async def _fetch_feature_details(
     )
 
 
+_SELLER_STATISTICS_KEYS: List[str] = [
+    "total_offers",
+    "distinct_shops",
+    "shops_with_warranty",
+    "shops_without_warranty",
+    "min_price",
+    "max_price",
+    "average_price",
+    "min_score",
+    "max_score",
+    "average_score",
+    "num_cities_with_offers",
+]
+
+_STATISTIC_ALIASES = {
+    "offer_count": "total_offers",
+    "offers": "total_offers",
+    "shop_count": "distinct_shops",
+}
+
+_CITY_ROLLUP_LIMIT = 50
+
+
+async def _collect_seller_statistics(
+    ctx: RunContext[AgentDependencies],
+    base_random_key: str,
+    statistic: str,
+    city: str | None = None,
+) -> SellerStatistics:
+    """Aggregate pricing, warranty, and score data for one base product."""
+
+    trimmed_key = base_random_key.strip()
+    requested_city = city.strip() if city else None
+
+    canonical_stat = _STATISTIC_ALIASES.get(
+        statistic.strip().lower() if statistic else "", "total_offers"
+    )
+    if canonical_stat not in _SELLER_STATISTICS_KEYS:
+        canonical_stat = "total_offers"
+
+    session = ctx.deps.session
+
+    stmt = (
+        select(
+            Member.shop_id,
+            Member.price,
+            Shop.has_warranty,
+            Shop.score,
+            Shop.city_id,
+            City.name,
+        )
+        .join(Shop, Shop.id == Member.shop_id)
+        .join(City, City.id == Shop.city_id)
+        .where(Member.base_random_key == trimmed_key)
+    )
+
+    result = await session.execute(stmt)
+    offer_records = list(result)
+
+    seen_shop_ids: set[int] = set()
+    price_samples: List[int] = []
+    score_samples: List[float] = []
+    shops_with_warranty = 0
+
+    city_buckets = defaultdict(
+        lambda: {
+            "city_id": None,
+            "city_name": None,
+            "offer_count": 0,
+            "shops_with_warranty": 0,
+            "shop_ids": set(),
+            "prices": [],
+            "scores": [],
+        }
+    )
+
+    for shop_id, price, has_warranty, score, city_id, city_name in offer_records:
+        seen_shop_ids.add(int(shop_id))
+        price_value = int(price) if price is not None else None
+        score_value = float(score) if score is not None else None
+
+        if price_value is not None:
+            price_samples.append(price_value)
+        if score_value is not None:
+            score_samples.append(score_value)
+        if bool(has_warranty):
+            shops_with_warranty += 1
+
+        entry = city_buckets[city_id]
+        entry["city_id"] = int(city_id) if city_id is not None else None
+        entry["city_name"] = city_name
+        entry["offer_count"] += 1
+        entry["shops_with_warranty"] += 1 if bool(has_warranty) else 0
+        entry["shop_ids"].add(int(shop_id))
+        if price_value is not None:
+            entry["prices"].append(price_value)
+        if score_value is not None:
+            entry["scores"].append(score_value)
+
+    total_offers = len(offer_records)
+    shops_without_warranty = total_offers - shops_with_warranty
+
+    min_price = min(price_samples) if price_samples else None
+    max_price = max(price_samples) if price_samples else None
+    average_price = round(mean(price_samples), 2) if price_samples else None
+
+    min_score = min(score_samples) if score_samples else None
+    max_score = max(score_samples) if score_samples else None
+    average_score = round(mean(score_samples), 2) if score_samples else None
+
+    city_rollups: List[CitySellerStatistics] = []
+    for entry in city_buckets.values():
+        price_list: List[int] = entry.pop("prices")
+        score_list: List[float] = entry.pop("scores")
+        shop_ids: set[int] = entry.pop("shop_ids")
+        offer_count = entry["offer_count"]
+        with_warranty = entry["shops_with_warranty"]
+
+        city_rollups.append(
+            CitySellerStatistics(
+                city_id=entry["city_id"],
+                city_name=entry["city_name"],
+                offer_count=offer_count,
+                distinct_shops=len(shop_ids),
+                shops_with_warranty=with_warranty,
+                shops_without_warranty=offer_count - with_warranty,
+                min_price=min(price_list) if price_list else None,
+                max_price=max(price_list) if price_list else None,
+                average_price=round(mean(price_list), 2) if price_list else None,
+                min_score=min(score_list) if score_list else None,
+                max_score=max(score_list) if score_list else None,
+                average_score=round(mean(score_list), 2) if score_list else None,
+            )
+        )
+
+    city_rollups.sort(key=lambda item: item.offer_count, reverse=True)
+    matched_city: CitySellerStatistics | None = None
+    if requested_city:
+        normalized_city = requested_city.lower()
+        for entry in city_rollups:
+            if (entry.city_name or "").lower() == normalized_city:
+                matched_city = entry
+                break
+
+    stat_baseline = {
+        "total_offers": total_offers,
+        "distinct_shops": len(seen_shop_ids),
+        "shops_with_warranty": shops_with_warranty,
+        "shops_without_warranty": shops_without_warranty,
+        "min_price": min_price,
+        "max_price": max_price,
+        "average_price": average_price,
+        "min_score": min_score,
+        "max_score": max_score,
+        "average_score": average_score,
+        "num_cities_with_offers": len(city_rollups),
+    }
+
+    statistic_value: float | int | None = stat_baseline.get(canonical_stat)
+    if matched_city and canonical_stat in {
+        "total_offers",
+        "distinct_shops",
+        "shops_with_warranty",
+        "shops_without_warranty",
+        "min_price",
+        "max_price",
+        "average_price",
+        "min_score",
+        "max_score",
+        "average_score",
+    }:
+        city_values = {
+            "total_offers": matched_city.offer_count,
+            "distinct_shops": matched_city.distinct_shops,
+            "shops_with_warranty": matched_city.shops_with_warranty,
+            "shops_without_warranty": matched_city.shops_without_warranty,
+            "min_price": matched_city.min_price,
+            "max_price": matched_city.max_price,
+            "average_price": matched_city.average_price,
+            "min_score": matched_city.min_score,
+            "max_score": matched_city.max_score,
+            "average_score": matched_city.average_score,
+        }
+        statistic_value = city_values.get(canonical_stat)
+
+    if canonical_stat == "num_cities_with_offers":
+        statistic_value = len(city_rollups)
+
+    if requested_city and matched_city:
+        city_rollup_slice = [matched_city]
+    elif requested_city:
+        city_rollup_slice = city_rollups[:_CITY_ROLLUP_LIMIT]
+    else:
+        city_rollup_slice = city_rollups[:_CITY_ROLLUP_LIMIT]
+
+    return SellerStatistics(
+        base_random_key=trimmed_key,
+        statistic=canonical_stat,
+        city=requested_city,
+        value=statistic_value,
+        total_offers=total_offers,
+        distinct_shops=len(seen_shop_ids),
+        shops_with_warranty=shops_with_warranty,
+        shops_without_warranty=shops_without_warranty,
+        min_price=min_price,
+        max_price=max_price,
+        average_price=average_price,
+        min_score=min_score,
+        max_score=max_score,
+        average_score=average_score,
+        num_cities_with_offers=len(city_rollups),
+        available_statistics=list(_SELLER_STATISTICS_KEYS),
+        city_stats=city_rollup_slice,
+    )
+
+
 PRODUCT_SEARCH_TOOL = Tool(
     _search_base_products,
     name="search_base_products",
@@ -314,19 +631,35 @@ FEATURE_LOOKUP_TOOL = Tool(
 )
 
 
+SELLER_STATISTICS_TOOL = Tool(
+    _collect_seller_statistics,
+    name="get_seller_statistics",
+    description=(
+        "After identifying the base product, call this to summarise seller activity. "
+        "Provide the base random key, specify the statistic name you must report (for example: "
+        "total_offers, min_price, average_price, max_score), and optionally pass a Persian city name "
+        "to focus on that location. It returns aggregated counts, price extrema, and score summaries. "
+        "Use the `value` field from the response to populate your numeric_answer and reply with digits only."
+    ),
+)
+
+
 SYSTEM_PROMPT = (
     "You are a concise but helpful shopping assistant. Ground every answer in the product catalogue by identifying the most relevant base product before making recommendations or quoting attributes.\n\n"
     "SCENARIO GUIDE:\n"
     "- Product procurement requests: resolve the customer's wording to a single catalogue item and answer in one turn with the best-matching base random key.\n"
     "- Feature clarification requests: locate the product first, then surface the requested attribute's value directly without asking for more details.\n"
+    "- Seller competition or pricing metrics: once the product is known, fetch the required statistic with get_seller_statistics and report only the numeric result.\n"
     "- Connectivity pings or other simple sanity checks may be answered with the static shortcuts provided by the API layer.\n\n"
     "GENERAL PRINCIPLES:\n"
     "- Answer deterministic product or feature questions in a single turn; do not ask clarifying questions even if confidence is modest—pick the strongest match and, if necessary, acknowledge uncertainty succinctly.\n"
     "- Always ground statements in actual catalogue data and keep explanations brief, factual, and free of invented information.\n"
+    "- When a numeric seller statistic is requested, set numeric_answer to the value from get_seller_statistics and ensure the final message contains digits only with no additional text.\n"
     "- Only include product keys when they are explicitly required or necessary for the response, keeping lists trimmed to at most one base key by default.\n\n"
     "TOOL USAGE:\n"
     "- search_base_products: Call this whenever you need to resolve what product the user references. The search string MUST be an exact substring of the user's latest message. Review up to ten returned matches and choose the option whose identifiers appear verbatim in the request.\n"
     "- get_product_feature: After identifying the product, use this to retrieve catalogue features. Provide the base random key and the exact feature wording from the user to receive the closest label, its value, and all available feature names for additional context.\n"
+    "- get_seller_statistics: Invoke this once you know the base product and the user needs pricing, availability, or rating aggregates. Supply the product key, pick one supported statistic name, optionally add a Persian city name, then echo the returned value as your entire reply.\n"
 )
 
 
@@ -350,7 +683,7 @@ def get_agent() -> Agent[AgentDependencies, AgentReply]:
         output_type=AgentReply,
         instructions=SYSTEM_PROMPT,
         deps_type=AgentDependencies,
-        tools=[PRODUCT_SEARCH_TOOL, FEATURE_LOOKUP_TOOL],
+        tools=[PRODUCT_SEARCH_TOOL, FEATURE_LOOKUP_TOOL, SELLER_STATISTICS_TOOL],
         instrument=InstrumentationSettings(),
         name="shopping-assistant",
     )

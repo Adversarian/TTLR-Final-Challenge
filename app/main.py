@@ -1,5 +1,6 @@
 """Main FastAPI application for the shopping assistant."""
 
+from decimal import Decimal, InvalidOperation
 from typing import List, Literal, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -102,8 +103,22 @@ async def chat_endpoint(
 
     reply = result.output.clipped()
 
+    message = reply.message
+    if reply.numeric_answer is not None:
+        try:
+            numeric_value = Decimal(reply.numeric_answer)
+        except (InvalidOperation, TypeError) as exc:  # pragma: no cover - sanity guard
+            raise HTTPException(
+                status_code=500, detail="Agent returned a non-numeric statistic."
+            ) from exc
+        if not numeric_value.is_finite():
+            raise HTTPException(
+                status_code=500, detail="Agent returned a non-finite statistic."
+            )
+        message = format(numeric_value.normalize(), "f")
+
     return ChatResponse(
-        message=reply.message,
+        message=message,
         base_random_keys=reply.base_random_keys or None,
         member_random_keys=reply.member_random_keys or None,
     )
