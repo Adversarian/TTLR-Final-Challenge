@@ -28,6 +28,29 @@ class _StubSession:
         raise AssertionError("execute should not be called when get succeeds")
 
 
+class _StubSessionContext:
+    """Context manager returning the provided stub session."""
+
+    def __init__(self, session: _StubSession) -> None:
+        self._session = session
+
+    async def __aenter__(self) -> _StubSession:
+        return self._session
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+class _StubSessionFactory:
+    """Callable returning an async context manager around a stub session."""
+
+    def __init__(self, session: _StubSession) -> None:
+        self._session = session
+
+    def __call__(self) -> _StubSessionContext:
+        return _StubSessionContext(self._session)
+
+
 def test_feature_lookup_returns_complete_map() -> None:
     """The helper should expose every flattened feature/value pair."""
 
@@ -37,7 +60,10 @@ def test_feature_lookup_returns_complete_map() -> None:
             "Weight": "10 kg",
         }
         session = _StubSession(feature_blob)
-        ctx = SimpleNamespace(deps=AgentDependencies(session=session))
+        session_factory = _StubSessionFactory(session)
+        ctx = SimpleNamespace(
+            deps=AgentDependencies(session=session, session_factory=session_factory)
+        )
 
         result = await _fetch_feature_details(ctx, " BK-123 ")
 

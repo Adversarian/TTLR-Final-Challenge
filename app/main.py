@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .agent import AgentDependencies, get_agent
-from .db import get_session
+from .db import AsyncSessionLocal, get_session
 
 
 class ChatMessage(BaseModel):
@@ -94,7 +94,7 @@ async def chat_endpoint(
     aggregated_prompt = "\n\n".join(text_messages)
 
     agent = get_agent()
-    deps = AgentDependencies(session=session)
+    deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
 
     try:
         result = await agent.run(user_prompt=aggregated_prompt, deps=deps)
