@@ -130,13 +130,12 @@ async def _search_base_products(
     """Resolve a customer request to likely base products."""
 
     normalized = _normalize_text(query)
-    session = ctx.deps.session
+    async with ctx.deps.session_factory() as session:
+        direct_match = await _find_product_by_key(session, query)
+        if direct_match is not None:
+            return ProductSearchResult(query=normalized, matches=[direct_match])
 
-    direct_match = await _find_product_by_key(session, query)
-    if direct_match is not None:
-        return ProductSearchResult(query=normalized, matches=[direct_match])
-
-    matches = await _fetch_top_matches(session, normalized)
+        matches = await _fetch_top_matches(session, normalized)
     return ProductSearchResult(query=normalized, matches=list(matches))
 
 
@@ -147,19 +146,19 @@ async def _fetch_feature_details(
     """Return the full feature/value list for the requested base product."""
 
     normalized_key = _normalize_text(base_random_key)
-    session = ctx.deps.session
-
     trimmed_key = base_random_key.strip()
-    product = await session.get(BaseProduct, trimmed_key) if trimmed_key else None
 
-    if product is not None:
-        extra_features = product.extra_features
-    else:
-        stmt = select(BaseProduct.extra_features).where(
-            func.lower(BaseProduct.random_key) == normalized_key
-        )
-        result = await session.execute(stmt)
-        extra_features = result.scalar_one_or_none()
+    async with ctx.deps.session_factory() as session:
+        product = await session.get(BaseProduct, trimmed_key) if trimmed_key else None
+
+        if product is not None:
+            extra_features = product.extra_features
+        else:
+            stmt = select(BaseProduct.extra_features).where(
+                func.lower(BaseProduct.random_key) == normalized_key
+            )
+            result = await session.execute(stmt)
+            extra_features = result.scalar_one_or_none()
 
     flattened = _flatten_features(
         extra_features if isinstance(extra_features, dict) else {}
@@ -215,24 +214,23 @@ async def _collect_seller_statistics(
     if canonical_stat not in _SELLER_STATISTICS_KEYS:
         canonical_stat = "total_offers"
 
-    session = ctx.deps.session
-
-    stmt = (
-        select(
-            Member.shop_id,
-            Member.price,
-            Shop.has_warranty,
-            Shop.score,
-            Shop.city_id,
-            City.name,
+    async with ctx.deps.session_factory() as session:
+        stmt = (
+            select(
+                Member.shop_id,
+                Member.price,
+                Shop.has_warranty,
+                Shop.score,
+                Shop.city_id,
+                City.name,
+            )
+            .join(Shop, Shop.id == Member.shop_id)
+            .join(City, City.id == Shop.city_id)
+            .where(Member.base_random_key == trimmed_key)
         )
-        .join(Shop, Shop.id == Member.shop_id)
-        .join(City, City.id == Shop.city_id)
-        .where(Member.base_random_key == trimmed_key)
-    )
 
-    result = await session.execute(stmt)
-    offer_records = list(result)
+        result = await session.execute(stmt)
+        offer_records = list(result)
 
     seen_shop_ids: set[int] = set()
     price_samples: List[int] = []

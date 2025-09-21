@@ -31,10 +31,37 @@ class _DummySession:
         return None
 
 
+class _DummySessionContext:
+    """Return a dummy session for async context manager usage."""
+
+    def __init__(self) -> None:
+        self._session = _DummySession()
+
+    async def __aenter__(self) -> _DummySession:
+        return self._session
+
+    async def __aexit__(self, exc_type, exc, tb) -> bool:
+        return False
+
+
+class _DummySessionFactory:
+    """Callable returning a context manager around a dummy session."""
+
+    def __call__(self) -> _DummySessionContext:
+        return _DummySessionContext()
+
+
 async def _session_override():
     """Yield a dummy session without touching a real database."""
 
     yield _DummySession()
+
+
+@pytest.fixture(autouse=True)
+def _override_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure the FastAPI handler uses a stub session factory during tests."""
+
+    monkeypatch.setattr(app_main, "AsyncSessionLocal", _DummySessionFactory())
 
 
 def test_chat_accepts_image_payload() -> None:
