@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import tarfile
 from pathlib import Path
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 import gdown
 from alembic import command
@@ -65,6 +67,20 @@ def extract_archive(archive_path: Path, destination: Path) -> None:
         _safe_extract(archive, destination)
 
 
+def ensure_extensions() -> None:
+    """Create required PostgreSQL extensions if they are missing."""
+    engine: Engine = create_engine(
+        settings.sync_database_url,
+        isolation_level="AUTOCOMMIT",
+        pool_pre_ping=True,
+    )
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("CREATE EXTENSION IF NOT EXISTS pg_trgm;"))
+    finally:
+        engine.dispose()
+
+
 def run_migrations() -> None:
     """Run Alembic migrations to ensure the schema is up to date."""
 
@@ -90,6 +106,7 @@ def main() -> None:
 
     ensure_data_directory()
     run_migrations()
+    ensure_extensions()
 
     if settings.import_marker_path.exists():
         LOGGER.info(
