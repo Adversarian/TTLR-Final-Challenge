@@ -11,6 +11,7 @@ import logfire
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.tools import RunContext, Tool
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -334,8 +335,13 @@ def get_agent() -> Agent[AgentDependencies, AgentReply]:
 
     _ensure_logfire()
 
-    model_name = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    model = OpenAIChatModel(model_name, api_key=os.getenv("OPENAI_API_KEY"))
+    model_name = os.getenv("OPENAI_MODEL", "gpt-4.1")
+    model = OpenAIChatModel(
+        model_name,
+        provider=OpenAIProvider(
+            base_url=os.getenv("OPENAI_BASE_URL"), api_key=os.getenv("OPENAI_API_KEY")
+        ),
+    )
 
     return Agent(
         model=model,
