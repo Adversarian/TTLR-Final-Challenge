@@ -33,7 +33,7 @@ def get_agent() -> Agent[AgentDependencies, AgentReply]:
         provider=OpenAIProvider(
             base_url=os.getenv("OPENAI_BASE_URL"), api_key=os.getenv("OPENAI_API_KEY")
         ),
-        settings=ModelSettings(temperature=0.1, parallel_tool_calls=True),
+        settings=ModelSettings(temperature=0.2, parallel_tool_calls=True),
     )
 
     return Agent(

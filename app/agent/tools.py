@@ -194,7 +194,7 @@ _STATISTIC_ALIASES = {
     "shop_count": "distinct_shops",
 }
 
-_CITY_ROLLUP_LIMIT = 50
+_CITY_ROLLUP_LIMIT = 20
 
 
 async def _collect_seller_statistics(

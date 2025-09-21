@@ -3,6 +3,7 @@
 from decimal import Decimal, InvalidOperation
 from typing import List, Literal, Optional
 
+from pydantic_ai.usage import UsageLimits
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -97,7 +98,14 @@ async def chat_endpoint(
     deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
 
     try:
-        result = await agent.run(user_prompt=aggregated_prompt, deps=deps)
+        result = await agent.run(
+            user_prompt=aggregated_prompt,
+            deps=deps,
+            usage_limits=UsageLimits(
+                request_limit=10,
+                tool_calls_limit=10,
+            ),
+        )
     except Exception as exc:  # pragma: no cover - defensive logging path
         raise HTTPException(status_code=500, detail="Agent execution failed.") from exc
 
