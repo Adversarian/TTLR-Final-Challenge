@@ -13,6 +13,7 @@ from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.tools import RunContext, Tool
+from pydantic_ai.settings import ModelSettings
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -341,6 +342,7 @@ def get_agent() -> Agent[AgentDependencies, AgentReply]:
         provider=OpenAIProvider(
             base_url=os.getenv("OPENAI_BASE_URL"), api_key=os.getenv("OPENAI_API_KEY")
         ),
+        settings=ModelSettings(temperature=0.1),
     )
 
     return Agent(
