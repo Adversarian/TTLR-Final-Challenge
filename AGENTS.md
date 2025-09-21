@@ -6,6 +6,7 @@
 - Feature extraction returns the entire flattened feature list for a base product so the agent can pick the correct attribute without repeated tool calls.
 - Seller-focused questions are handled via a `get_seller_statistics` tool that joins members, shops, and cities to compute price, score, warranty, and availability aggregates while feeding a numeric answer back to the HTTP layer.
 - The data layer assumes PostgreSQL connection details are provided via the environment variables listed in `.env.template`.
+- The monolithic `app/agent.py` module has been decomposed into an `app/agent/` package with dedicated files for dependencies, schemas, tools, prompts, and the agent factory to keep the codebase maintainable.
 
 ## Ground rules for new changes
 - Keep solutions simple, well-documented, and strongly typed; prefer the minimal implementation that satisfies the competition scenarios without per-scenario branching (scenario 0 may remain hard-coded).
