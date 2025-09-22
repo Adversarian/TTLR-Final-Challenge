@@ -8,6 +8,7 @@ from typing import List, Optional
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Computed,
     DateTime,
     ForeignKey,
     Index,
@@ -18,6 +19,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.dialects.postgresql import TSVECTOR
 
 
 class Base(DeclarativeBase):
@@ -88,6 +90,14 @@ class BaseProduct(Base):
     member_random_keys: Mapped[List[str]] = mapped_column(
         JSON, server_default=text("'[]'::json"), nullable=False
     )
+    search_vector: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector('simple', coalesce(persian_name, '') || ' ' || coalesce(english_name, ''))",
+            persisted=True,
+        ),
+        nullable=False,
+    )
 
     members: Mapped[List["Member"]] = relationship(back_populates="base")
 
@@ -105,6 +115,11 @@ class BaseProduct(Base):
             "english_name",
             postgresql_using="gin",
             postgresql_ops={"english_name": "gin_trgm_ops"},
+        ),
+        Index(
+            "idx_base_products_search_vector",
+            "search_vector",
+            postgresql_using="gin",
         ),
     )
 
