@@ -34,6 +34,8 @@ class Settings:
     data_archive_url: str
     data_archive_name: str
     import_marker_name: str
+    load_chunk_size: int
+    search_similarity_threshold: float
 
     @property
     def async_database_url(self) -> str:
@@ -72,6 +74,50 @@ def _default_postgres_host() -> str:
     return _require_env("POSTGRES_HOST")
 
 
+def _int_from_env(key: str, default: int) -> int:
+    """Parse a positive integer from the environment."""
+
+    raw_value = os.getenv(key)
+    if raw_value is None:
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError as exc:  # pragma: no cover - defensive programming
+        raise RuntimeError(
+            f"Environment variable '{key}' must be an integer"
+        ) from exc
+
+    if value <= 0:
+        raise RuntimeError(
+            f"Environment variable '{key}' must be greater than zero"
+        )
+
+    return value
+
+
+def _float_from_env(key: str, default: float) -> float:
+    """Parse a floating-point value from the environment."""
+
+    raw_value = os.getenv(key)
+    if raw_value is None:
+        return default
+
+    try:
+        value = float(raw_value)
+    except ValueError as exc:  # pragma: no cover - defensive programming
+        raise RuntimeError(
+            f"Environment variable '{key}' must be a floating-point number"
+        ) from exc
+
+    if not 0.0 <= value <= 1.0:
+        raise RuntimeError(
+            f"Environment variable '{key}' must be between 0.0 and 1.0"
+        )
+
+    return value
+
+
 def get_settings() -> Settings:
     """Create settings populated from the environment."""
 
@@ -91,6 +137,10 @@ def get_settings() -> Settings:
         ),
         data_archive_name=os.getenv("TOROB_DATA_ARCHIVE_NAME", "torob-dataset.tar.gz"),
         import_marker_name=os.getenv("TOROB_DATA_IMPORT_MARKER", ".import-complete"),
+        load_chunk_size=_int_from_env("TOROB_LOAD_CHUNK_SIZE", 10_000),
+        search_similarity_threshold=_float_from_env(
+            "TOROB_SEARCH_SIMILARITY_THRESHOLD", 0.3
+        ),
     )
 
 
