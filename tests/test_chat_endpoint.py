@@ -64,17 +64,23 @@ def _override_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_main, "AsyncSessionLocal", _DummySessionFactory())
 
 
-def test_chat_accepts_image_payload() -> None:
-    """An image message should be accepted and responded to gracefully."""
+def test_chat_accepts_image_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An image message should route to the vision agent and return its reply."""
 
     app.dependency_overrides[get_session] = _session_override
+    reply = AgentReply(message="پتو", base_random_keys=[], member_random_keys=[])
+    monkeypatch.setattr(app_main, "get_image_agent", lambda: _StubAgent(reply))
+
     try:
         client = TestClient(app)
         response = client.post(
             "/chat",
             json={
                 "chat_id": "image-check",
-                "messages": [{"type": "image", "content": "ZmFrZS1pbWFnZS1kYXRh"}],
+                "messages": [
+                    {"type": "text", "content": "شیء اصلی در تصویر چیست؟"},
+                    {"type": "image", "content": "data:image/png;base64,ZmFrZS1pbWFnZS1kYXRh"},
+                ],
             },
         )
     finally:
@@ -82,9 +88,44 @@ def test_chat_accepts_image_payload() -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["message"].startswith("Image messages are not supported yet")
-    assert payload["base_random_keys"] is None
-    assert payload["member_random_keys"] is None
+    assert payload == {
+        "message": "پتو",
+        "base_random_keys": None,
+        "member_random_keys": None,
+    }
+
+
+def test_invalid_image_payload_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Malformed base64 data should raise a client error before hitting the agent."""
+
+    app.dependency_overrides[get_session] = _session_override
+    called = False
+
+    def _stub_agent() -> _StubAgent:
+        nonlocal called
+        called = True
+        return _StubAgent(AgentReply(message="ok"))
+
+    monkeypatch.setattr(app_main, "get_image_agent", _stub_agent)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/chat",
+            json={
+                "chat_id": "image-check",
+                "messages": [
+                    {"type": "text", "content": "describe"},
+                    {"type": "image", "content": "data:image/png;base64,@@@"},
+                ],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 400
+    assert called is False
+    assert response.json()["detail"].startswith("Invalid base64 image data") or response.json()["detail"].startswith("Malformed")
 
 
 class _StubAgent:
