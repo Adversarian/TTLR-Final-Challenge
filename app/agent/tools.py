@@ -60,6 +60,12 @@ async def _fetch_top_matches(
 
     trigram_predicate = or_(persian_match, english_match)
 
+    ts_query = func.websearch_to_tsquery("simple", normalized_query)
+    tfidf_rank = func.coalesce(
+        func.ts_rank_cd(BaseProduct.search_vector, ts_query),
+        0.0,
+    )
+
     stmt = (
         select(
             BaseProduct.random_key,
@@ -67,7 +73,7 @@ async def _fetch_top_matches(
             BaseProduct.english_name,
             score,
         )
-        .order_by(score.desc())
+        .order_by(tfidf_rank.desc(), score.desc())
         .where(trigram_predicate, similarity_name >= threshold)
         .limit(limit)
     )
