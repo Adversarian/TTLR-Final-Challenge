@@ -36,6 +36,8 @@ class Settings:
     import_marker_name: str
     load_chunk_size: int
     search_similarity_threshold: float
+    request_log_directory: Path
+    request_log_idle_seconds: int
 
     @property
     def async_database_url(self) -> str:
@@ -118,6 +120,12 @@ def get_settings() -> Settings:
     data_dir_raw = os.getenv("TOROB_DATA_DIR", "/app/data/torob")
     data_dir = Path(data_dir_raw).expanduser().resolve()
 
+    log_dir_raw = os.getenv("TOROB_REQUEST_LOG_DIR")
+    if log_dir_raw is None:
+        request_log_dir = (data_dir / "logs").resolve()
+    else:
+        request_log_dir = Path(log_dir_raw).expanduser().resolve()
+
     return Settings(
         postgres_user=_require_env("POSTGRES_USER"),
         postgres_password=_require_env("POSTGRES_PASSWORD"),
@@ -134,6 +142,10 @@ def get_settings() -> Settings:
         load_chunk_size=_int_from_env("TOROB_LOAD_CHUNK_SIZE", 10_000),
         search_similarity_threshold=_float_from_env(
             "TOROB_SEARCH_SIMILARITY_THRESHOLD", 0.3
+        ),
+        request_log_directory=request_log_dir,
+        request_log_idle_seconds=_int_from_env(
+            "TOROB_REQUEST_LOG_IDLE_SECONDS", 60
         ),
     )
 

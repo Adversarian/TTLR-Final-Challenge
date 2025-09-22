@@ -214,6 +214,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+# Request logging artifacts
+logs/
 # Competition dataset artifacts
 data/
 torob_data/
