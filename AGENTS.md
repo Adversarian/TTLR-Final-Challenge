@@ -10,6 +10,15 @@
 - The system prompt now teaches the model how to compare multiple candidate products in one turn while still returning a single base key.
 - The OpenAI client enables `parallel_tool_calls` so the runtime can execute independent catalogue lookups concurrently when the model requests it.
 
+## Database indexes
+- `base_products`
+  - `idx_base_products_persian_name_trgm` (GIN with `gin_trgm_ops`) accelerates fuzzy name lookups for the `search_base_products` tool.
+  - `idx_base_products_english_name_trgm` (GIN with `gin_trgm_ops`) backs English-name fuzzy searches for the same tool.
+  - `idx_base_products_category` and `idx_base_products_brand` remain available for potential category/brand filters while exploring catalogue data.
+- `members`
+  - `idx_members_base_random_key` ensures the seller statistics aggregation can quickly collect offers for a base product.
+  - `idx_members_shop_id` keeps lookups by shop efficient for warranty/score joins.
+
 ## Ground rules for new changes
 - Keep solutions simple, well-documented, and strongly typed; prefer the minimal implementation that satisfies the competition scenarios without per-scenario branching (scenario 0 may remain hard-coded).
 - Use `uv` for dependency management, FastAPI for the HTTP layer, and Pydantic-AI for agent workflows. Avoid introducing conflicting or deprecated libraries.
