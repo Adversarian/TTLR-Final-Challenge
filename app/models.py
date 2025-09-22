@@ -85,6 +85,9 @@ class BaseProduct(Base):
         JSON, server_default=text("'{}'::json"), nullable=False
     )
     image_url: Mapped[Optional[str]] = mapped_column(Text)
+    member_random_keys: Mapped[List[str]] = mapped_column(
+        JSON, server_default=text("'[]'::json"), nullable=False
+    )
 
     members: Mapped[List["Member"]] = relationship(back_populates="base")
 

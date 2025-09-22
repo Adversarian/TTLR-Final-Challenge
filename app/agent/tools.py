@@ -182,45 +182,18 @@ async def _fetch_feature_details(
     )
 
 
-_SELLER_STATISTICS_KEYS: List[str] = [
-    "total_offers",
-    "distinct_shops",
-    "shops_with_warranty",
-    "shops_without_warranty",
-    "min_price",
-    "max_price",
-    "average_price",
-    "min_score",
-    "max_score",
-    "average_score",
-    "num_cities_with_offers",
-]
-
-_STATISTIC_ALIASES = {
-    "offer_count": "total_offers",
-    "offers": "total_offers",
-    "shop_count": "distinct_shops",
-}
-
 _CITY_ROLLUP_LIMIT = 20
 
 
 async def _collect_seller_statistics(
     ctx: RunContext[AgentDependencies],
     base_random_key: str,
-    statistic: str,
     city: str | None = None,
 ) -> SellerStatistics:
     """Aggregate pricing, warranty, and score data for one base product."""
 
     trimmed_key = base_random_key.strip()
     requested_city = city.strip() if city else None
-
-    canonical_stat = _STATISTIC_ALIASES.get(
-        statistic.strip().lower() if statistic else "", "total_offers"
-    )
-    if canonical_stat not in _SELLER_STATISTICS_KEYS:
-        canonical_stat = "total_offers"
 
     async with ctx.deps.session_factory() as session:
         stmt = (
@@ -325,50 +298,6 @@ async def _collect_seller_statistics(
                 matched_city = entry
                 break
 
-    stat_baseline = {
-        "total_offers": total_offers,
-        "distinct_shops": len(seen_shop_ids),
-        "shops_with_warranty": shops_with_warranty,
-        "shops_without_warranty": shops_without_warranty,
-        "min_price": min_price,
-        "max_price": max_price,
-        "average_price": average_price,
-        "min_score": min_score,
-        "max_score": max_score,
-        "average_score": average_score,
-        "num_cities_with_offers": len(city_rollups),
-    }
-
-    statistic_value: float | int | None = stat_baseline.get(canonical_stat)
-    if matched_city and canonical_stat in {
-        "total_offers",
-        "distinct_shops",
-        "shops_with_warranty",
-        "shops_without_warranty",
-        "min_price",
-        "max_price",
-        "average_price",
-        "min_score",
-        "max_score",
-        "average_score",
-    }:
-        city_values = {
-            "total_offers": matched_city.offer_count,
-            "distinct_shops": matched_city.distinct_shops,
-            "shops_with_warranty": matched_city.shops_with_warranty,
-            "shops_without_warranty": matched_city.shops_without_warranty,
-            "min_price": matched_city.min_price,
-            "max_price": matched_city.max_price,
-            "average_price": matched_city.average_price,
-            "min_score": matched_city.min_score,
-            "max_score": matched_city.max_score,
-            "average_score": matched_city.average_score,
-        }
-        statistic_value = city_values.get(canonical_stat)
-
-    if canonical_stat == "num_cities_with_offers":
-        statistic_value = len(city_rollups)
-
     if requested_city and matched_city:
         city_rollup_slice = [matched_city]
     elif requested_city:
@@ -378,9 +307,7 @@ async def _collect_seller_statistics(
 
     return SellerStatistics(
         base_random_key=trimmed_key,
-        statistic=canonical_stat,
         city=requested_city,
-        value=statistic_value,
         total_offers=total_offers,
         distinct_shops=len(seen_shop_ids),
         shops_with_warranty=shops_with_warranty,
@@ -392,7 +319,6 @@ async def _collect_seller_statistics(
         max_score=max_score,
         average_score=average_score,
         num_cities_with_offers=len(city_rollups),
-        available_statistics=list(_SELLER_STATISTICS_KEYS),
         city_stats=city_rollup_slice,
     )
 
@@ -401,10 +327,9 @@ PRODUCT_SEARCH_TOOL = Tool(
     _search_base_products,
     name="search_base_products",
     description=(
-        "Use this tool to map the customer's language to actual base products. "
-        "Your search string MUST be an exact substring from the latest user message. "
-        "Provide that snippet from the customer request so the tool can run a fuzzy lookup. "
-        "It returns up to 10 of the strongest catalogue matches (best first) with random keys and similarity scores."
+        "Use this tool to map the customer's language to actual base products for procurement or comparison tasks. "
+        "Build a compact search string by copying the clearest product name or identifier from the latest user message and, when helpful, append distinctive attributes such as size, color, material, or model codes. "
+        "The fuzzy lookup returns up to 10 of the strongest catalogue matches (best first) with random keys, names, and similarity scores."
     ),
 )
 
@@ -414,9 +339,9 @@ FEATURE_LOOKUP_TOOL = Tool(
     name="get_product_feature",
     description=(
         "Use this tool after you know which base product the user means. "
-        "Provide only the base product random key to receive every catalogue feature "
-        "as name/value pairs along with a convenience list of feature names. "
-        "Pick the attribute you need from the returned payload."
+        "Provide only the base product random key to receive every catalogue feature as name/value pairs "
+        "(dimensions, materials, capacities, included accessories, etc.) along with a convenience list of feature names. "
+        "Pick the attribute you need from the returned payload to answer feature clarification questions in a single turn."
     ),
 )
 
@@ -425,11 +350,10 @@ SELLER_STATISTICS_TOOL = Tool(
     _collect_seller_statistics,
     name="get_seller_statistics",
     description=(
-        "After identifying the base product, call this to summarise seller activity. "
-        "Provide the base random key, specify the statistic name you must report (for example: "
-        "total_offers, min_price, average_price, max_score), and optionally pass a Persian city name "
-        "to focus on that location. It returns aggregated counts, price extrema, and score summaries. "
-        "Use the `value` field from the response to populate your numeric_answer and reply with digits only."
+        "After identifying the base product, call this to summarise seller activity for pricing, availability, and rating questions. "
+        "Provide the base random key and, when relevant, include a Persian city to focus the per-city rollups. "
+        "The response includes total offers, distinct shops, warranty counts, price extrema/averages, shop score summaries, and per-city rollups so you can choose the value that satisfies the user. "
+        "Populate numeric_answer with the field you quote and keep the final reply digits only."
     ),
 )
 

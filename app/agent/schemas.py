@@ -93,15 +93,9 @@ class SellerStatistics(BaseModel):
     """Aggregated marketplace data for a base product."""
 
     base_random_key: str = Field(..., description="Target base product key.")
-    statistic: str = Field(
-        ..., description="Requested statistic key that maps to the numeric value."
-    )
     city: str | None = Field(
         None,
-        description="Optional Persian city name used to narrow down the statistic.",
-    )
-    value: float | int | None = Field(
-        None, description="Numeric value for the requested statistic."
+        description="Optional Persian city name used to focus the aggregation.",
     )
     total_offers: int = Field(..., ge=0, description="Total number of offers.")
     distinct_shops: int = Field(
@@ -134,13 +128,9 @@ class SellerStatistics(BaseModel):
     num_cities_with_offers: int = Field(
         ..., ge=0, description="Number of cities that list the product."
     )
-    available_statistics: List[str] = Field(
-        default_factory=list,
-        description="List of supported statistic keys for the request.",
-    )
     city_stats: List[CitySellerStatistics] = Field(
         default_factory=list,
-        description="Optional per-city breakdowns supporting the statistic.",
+        description="Optional per-city breakdowns to support city-specific answers.",
     )
 
 
