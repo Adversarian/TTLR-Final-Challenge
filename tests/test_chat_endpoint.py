@@ -79,7 +79,10 @@ def test_chat_accepts_image_payload(monkeypatch: pytest.MonkeyPatch) -> None:
                 "chat_id": "image-check",
                 "messages": [
                     {"type": "text", "content": "شیء اصلی در تصویر چیست؟"},
-                    {"type": "image", "content": "data:image/png;base64,ZmFrZS1pbWFnZS1kYXRh"},
+                    {
+                        "type": "image",
+                        "content": "data:image/png;base64,ZmFrZS1pbWFnZS1kYXRh",
+                    },
                 ],
             },
         )
@@ -123,7 +126,10 @@ def test_image_routing_when_text_is_last(monkeypatch: pytest.MonkeyPatch) -> Non
             json={
                 "chat_id": "image-check",
                 "messages": [
-                    {"type": "image", "content": "data:image/png;base64,ZmFrZS1pbWFnZS1kYXRh"},
+                    {
+                        "type": "image",
+                        "content": "data:image/png;base64,ZmFrZS1pbWFnZS1kYXRh",
+                    },
                     {"type": "text", "content": "چه چیزی در تصویر می‌بینی؟"},
                 ],
             },
@@ -140,6 +146,7 @@ def test_image_routing_when_text_is_last(monkeypatch: pytest.MonkeyPatch) -> Non
         "base_random_keys": None,
         "member_random_keys": None,
     }
+
 
 def test_invalid_image_payload_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:
     """Malformed base64 data should raise a client error before hitting the agent."""
@@ -171,7 +178,9 @@ def test_invalid_image_payload_returns_400(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert response.status_code == 400
     assert called is False
-    assert response.json()["detail"].startswith("Invalid base64 image data") or response.json()["detail"].startswith("Malformed")
+    assert response.json()["detail"].startswith(
+        "Invalid base64 image data"
+    ) or response.json()["detail"].startswith("Malformed")
 
 
 class _StubAgent:

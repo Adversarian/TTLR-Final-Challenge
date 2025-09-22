@@ -139,10 +139,15 @@ async def chat_endpoint(
 
         vision_prompt_text = aggregated_prompt
         if not vision_prompt_text:
-            vision_prompt_text = "کاربر تصویری ارسال کرده است. محتوای تصویر را به اختصار توصیف کن."
+            vision_prompt_text = (
+                "کاربر تصویری ارسال کرده است. محتوای تصویر را به اختصار توصیف کن."
+            )
 
         media_type = mime_type or "image/png"
-        prompt_segments = [vision_prompt_text, BinaryContent(data=image_bytes, media_type=media_type)]
+        prompt_segments = [
+            vision_prompt_text,
+            BinaryContent(data=image_bytes, media_type=media_type),
+        ]
 
         try:
             result = await agent.run(
@@ -154,7 +159,9 @@ async def chat_endpoint(
                 ),
             )
         except Exception as exc:  # pragma: no cover - defensive logging path
-            raise HTTPException(status_code=500, detail="Vision agent execution failed.") from exc
+            raise HTTPException(
+                status_code=500, detail="Vision agent execution failed."
+            ) from exc
 
         reply = result.output.clipped()
 

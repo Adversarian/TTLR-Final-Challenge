@@ -84,14 +84,10 @@ def _int_from_env(key: str, default: int) -> int:
     try:
         value = int(raw_value)
     except ValueError as exc:  # pragma: no cover - defensive programming
-        raise RuntimeError(
-            f"Environment variable '{key}' must be an integer"
-        ) from exc
+        raise RuntimeError(f"Environment variable '{key}' must be an integer") from exc
 
     if value <= 0:
-        raise RuntimeError(
-            f"Environment variable '{key}' must be greater than zero"
-        )
+        raise RuntimeError(f"Environment variable '{key}' must be greater than zero")
 
     return value
 
@@ -111,9 +107,7 @@ def _float_from_env(key: str, default: float) -> float:
         ) from exc
 
     if not 0.0 <= value <= 1.0:
-        raise RuntimeError(
-            f"Environment variable '{key}' must be between 0.0 and 1.0"
-        )
+        raise RuntimeError(f"Environment variable '{key}' must be between 0.0 and 1.0")
 
     return value
 
