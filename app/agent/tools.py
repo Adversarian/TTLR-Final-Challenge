@@ -39,7 +39,7 @@ def _normalize_text(value: str) -> str:
 
 
 async def _fetch_top_matches(
-    session: AsyncSession, normalized_query: str, limit: int = 15
+    session: AsyncSession, normalized_query: str, limit: int = 20
 ) -> Sequence[ProductMatch]:
     """Return the strongest matches for the provided search query."""
 
@@ -336,7 +336,7 @@ PRODUCT_SEARCH_TOOL = Tool(
         "Use this tool to map the customer's language to actual base products for procurement or comparison tasks. "
         "Build a compact search string by copying the clearest product name or identifier from the latest user message and, when helpful, append distinctive attributes such as size, color, material, or model codes. "
         "Invoke it at most once per user turn unless you materially change the search string with new evidence—never repeat an identical call. "
-        "The fuzzy lookup returns up to 15 of the strongest catalogue matches (best first) with random keys, names, and similarity scores. "
+        "The fuzzy lookup returns up to 20 of the strongest catalogue matches (best first) with random keys, names, and similarity scores. "
         "If the initial search leaves you uncertain and you lack a better wording, choose the strongest candidate or apologize instead of retrying."
         "If the search query contains pack quantity but a retrieved product doesn't state pack quantity in its name, assume 1."
     ),
