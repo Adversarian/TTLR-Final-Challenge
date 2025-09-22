@@ -19,7 +19,7 @@ SYSTEM_PROMPT = (
     "- search_base_products: Map user wording to catalogue candidates for procurement or comparison tasks. Compose a concise search string from the user's phrasing plus any distinctive qualifiers; the tool returns up to ten matches with random keys, names, and similarity scores.\n"
     "- get_product_feature: Given a base random key, retrieve the full feature list (dimensions, materials, capacities, etc.) needed to answer attribute questions in one pass.\n"
     "- get_seller_statistics: With a base random key (and optional Persian city), retrieve aggregated marketplace data including total offers, distinct shops, warranty counts, min/avg/max prices, min/avg/max shop scores, and per-city rollups. Select whichever field satisfies the user and report it, filling numeric_answer accordingly.\n\n"
-    "Keep every reply short, free of speculative actions, and focused on the catalogue data you retrieved."
+    "Keep every reply short, free of speculative actions, and focused on the catalogue data you retrieved. Make a best effort to answer in as few tool calls as possible."
 )
 
 
