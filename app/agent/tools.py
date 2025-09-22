@@ -335,7 +335,9 @@ PRODUCT_SEARCH_TOOL = Tool(
     description=(
         "Use this tool to map the customer's language to actual base products for procurement or comparison tasks. "
         "Build a compact search string by copying the clearest product name or identifier from the latest user message and, when helpful, append distinctive attributes such as size, color, material, or model codes. "
-        "The fuzzy lookup returns up to 15 of the strongest catalogue matches (best first) with random keys, names, and similarity scores."
+        "Invoke it at most once per user turn unless you materially change the search string with new evidence—never repeat an identical call. "
+        "The fuzzy lookup returns up to 15 of the strongest catalogue matches (best first) with random keys, names, and similarity scores. "
+        "If the initial search leaves you uncertain and you lack a better wording, choose the strongest candidate or apologize instead of retrying."
     ),
 )
 
@@ -347,7 +349,8 @@ FEATURE_LOOKUP_TOOL = Tool(
         "Use this tool after you know which base product the user means. "
         "Provide only the base product random key to receive every catalogue feature as name/value pairs "
         "(dimensions, materials, capacities, included accessories, etc.) along with a convenience list of feature names. "
-        "Pick the attribute you need from the returned payload to answer feature clarification questions in a single turn."
+        "Pick the attribute you need from the returned payload to answer feature clarification questions in a single turn. "
+        "Avoid repeating the call with the exact same base_random_key in the same turn unless new arguments are genuinely required."
     ),
 )
 
@@ -359,7 +362,8 @@ SELLER_STATISTICS_TOOL = Tool(
         "After identifying the base product, call this to summarise seller activity for pricing, availability, and rating questions. "
         "Provide the base random key and, when relevant, include a Persian city to focus the per-city rollups. "
         "The response includes total offers, distinct shops, warranty counts, price extrema/averages, shop score summaries, and per-city rollups so you can choose the value that satisfies the user. "
-        "Populate numeric_answer with the field you quote and keep the final reply digits only."
+        "Populate numeric_answer with the field you quote and keep the final reply digits only. "
+        "Do not issue an identical request with the same arguments more than once per turn; only repeat if you materially change the inputs."
     ),
 )
 
