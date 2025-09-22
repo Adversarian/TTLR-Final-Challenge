@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .agent import AgentDependencies, get_agent
 from .agent.image import get_image_agent
 from .db import AsyncSessionLocal, get_session
+from .logging_utils.judge_requests import request_logger
 
 
 class ChatMessage(BaseModel):
@@ -93,6 +94,8 @@ async def chat_endpoint(
     For scenario 0 the handler returns deterministic responses that allow the
     judge to verify that the API is reachable and well-formed.
     """
+
+    await request_logger.log_chat_request(request)
 
     if not request.messages:
         return ChatResponse(message="No messages provided.")
@@ -209,6 +212,15 @@ async def chat_endpoint(
         base_random_keys=reply.base_random_keys or None,
         member_random_keys=reply.member_random_keys or None,
     )
+
+
+async def _shutdown_request_logger() -> None:
+    """Ensure any pending judge logs are flushed to disk."""
+
+    await request_logger.aclose()
+
+
+app.add_event_handler("shutdown", _shutdown_request_logger)
 
 
 __all__ = [

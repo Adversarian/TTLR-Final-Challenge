@@ -16,6 +16,7 @@ os.environ.setdefault("POSTGRES_PORT", "5432")
 os.environ.setdefault("POSTGRES_DB", "torob")
 
 import app.main as app_main
+import app.logging_utils.judge_requests as request_logging
 from app.agent import AgentReply
 from app.main import app
 from app.db import get_session
@@ -193,6 +194,19 @@ class _StubAgent:
         return SimpleNamespace(output=self._reply)
 
 
+class _RecorderLogger:
+    """Test helper capturing chat identifiers that trigger logging."""
+
+    def __init__(self) -> None:
+        self.chat_ids: list[str] = []
+
+    async def log_chat_request(self, request):
+        self.chat_ids.append(request.chat_id)
+
+    async def aclose(self) -> None:  # pragma: no cover - no-op for tests
+        return None
+
+
 def test_numeric_reply_is_enforced(monkeypatch: pytest.MonkeyPatch) -> None:
     """When the agent provides a numeric answer it should replace the message."""
 
@@ -246,3 +260,28 @@ def test_invalid_numeric_reply_raises_error(monkeypatch: pytest.MonkeyPatch) -> 
     assert response.status_code == 500
     payload = response.json()
     assert payload["detail"] == "Agent returned a non-finite statistic."
+
+
+def test_prefixed_chat_ids_trigger_logging(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The `/chat` endpoint should log judge requests with the tracked prefix."""
+
+    app.dependency_overrides[get_session] = _session_override
+    recorder = _RecorderLogger()
+    monkeypatch.setattr(app_main, "request_logger", recorder)
+    monkeypatch.setattr(request_logging, "request_logger", recorder)
+
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "chat_id": "test-session",
+                "messages": [{"type": "text", "content": "ping"}],
+            },
+        )
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert recorder.chat_ids == ["test-session"]
