@@ -73,7 +73,7 @@ async def _fetch_top_matches(
             BaseProduct.english_name,
             score,
         )
-        .order_by(tfidf_rank.desc(), score.desc())
+        .order_by(score.desc(), tfidf_rank.desc())
         .where(trigram_predicate, similarity_name >= threshold)
         .limit(limit)
     )
