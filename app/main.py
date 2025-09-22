@@ -97,38 +97,47 @@ async def chat_endpoint(
     if not request.messages:
         return ChatResponse(message="No messages provided.")
 
-    latest_message = request.messages[-1]
-    latest_content = latest_message.content.strip()
-    latest_content_lower = latest_content.lower()
+    text_segments: List[str] = []
+    image_payloads: List[str] = []
+    for message in request.messages:
+        content = message.content
+        stripped = content.strip()
+        if not stripped:
+            continue
+        if message.type == "text":
+            text_segments.append(stripped)
+        elif message.type == "image":
+            image_payloads.append(stripped)
 
-    if latest_content_lower == "ping" or request.chat_id == "sanity-check-ping":
+    lower_text_segments = [segment.lower() for segment in text_segments]
+
+    if request.chat_id == "sanity-check-ping" or any(
+        segment == "ping" for segment in lower_text_segments
+    ):
         return ChatResponse(message="pong")
 
-    base_key = _extract_key("return base random key:", latest_content)
-    if base_key:
-        return ChatResponse(base_random_keys=[base_key])
+    for text in text_segments:
+        base_key = _extract_key("return base random key:", text)
+        if base_key:
+            return ChatResponse(base_random_keys=[base_key])
 
-    member_key = _extract_key("return member random key:", latest_content)
-    if member_key:
-        return ChatResponse(member_random_keys=[member_key])
+    for text in text_segments:
+        member_key = _extract_key("return member random key:", text)
+        if member_key:
+            return ChatResponse(member_random_keys=[member_key])
 
-    text_messages = [
-        message.content.strip()
-        for message in request.messages
-        if message.type == "text" and message.content.strip()
-    ]
-    aggregated_prompt = "\n\n".join(text_messages)
+    aggregated_prompt = "\n\n".join(text_segments).strip()
 
-    if latest_message.type == "image":
+    if image_payloads:
         try:
-            image_bytes, mime_type = _decode_image_payload(latest_content)
+            image_bytes, mime_type = _decode_image_payload(image_payloads[-1])
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         agent = get_image_agent()
         deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
 
-        vision_prompt_text = aggregated_prompt.strip()
+        vision_prompt_text = aggregated_prompt
         if not vision_prompt_text:
             vision_prompt_text = "کاربر تصویری ارسال کرده است. محتوای تصویر را به اختصار توصیف کن."
 
@@ -154,7 +163,7 @@ async def chat_endpoint(
             base_random_keys=reply.base_random_keys or None,
             member_random_keys=reply.member_random_keys or None,
         )
-    if not text_messages:
+    if not aggregated_prompt:
         return ChatResponse(message="No textual message found in the request.")
 
     agent = get_agent()
