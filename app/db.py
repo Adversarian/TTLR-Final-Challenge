@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from .config import settings
 from . import models  # noqa: F401 - ensure models are imported for metadata
 
-engine = create_async_engine(settings.async_database_url, future=True)
+engine = create_async_engine(
+    settings.async_database_url,
+    future=True,
+    pool_pre_ping=True,
+)
 
 AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
 

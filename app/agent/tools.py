@@ -7,10 +7,11 @@ from statistics import mean
 from typing import List, Sequence
 
 from pydantic_ai.tools import RunContext, Tool
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import BaseProduct, City, Member, Shop
+from ..config import settings
 from .dependencies import AgentDependencies
 from .schemas import (
     CitySellerStatistics,
@@ -45,12 +46,19 @@ async def _fetch_top_matches(
     if not normalized_query:
         return []
 
+    threshold = settings.search_similarity_threshold
+
     similarity_name = func.greatest(
         func.similarity(BaseProduct.persian_name, normalized_query),
         func.similarity(func.coalesce(BaseProduct.english_name, ""), normalized_query),
     )
 
     score = similarity_name.label("score")
+
+    persian_match = BaseProduct.persian_name.op("%")(normalized_query)
+    english_match = BaseProduct.english_name.op("%")(normalized_query)
+
+    trigram_predicate = or_(persian_match, english_match)
 
     stmt = (
         select(
@@ -60,7 +68,7 @@ async def _fetch_top_matches(
             score,
         )
         .order_by(score.desc())
-        .where(similarity_name > 0.0)
+        .where(trigram_predicate, similarity_name >= threshold)
         .limit(limit)
     )
 

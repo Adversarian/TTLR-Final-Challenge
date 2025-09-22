@@ -94,7 +94,9 @@ def load_dataset() -> None:
     """Load parquet tables into the configured PostgreSQL database."""
 
     LOGGER.info("Loading parquet tables into PostgreSQL")
-    results = load_all_tables_sync(settings.data_directory)
+    results = load_all_tables_sync(
+        settings.data_directory, chunk_size=settings.load_chunk_size
+    )
     for table, inserted in results.items():
         LOGGER.info("Inserted %s rows into %s", inserted, table)
 

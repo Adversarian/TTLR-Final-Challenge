@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List
 
 import pyarrow.parquet as pq
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import DBAPIError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import AsyncSessionLocal
@@ -18,6 +19,10 @@ from . import models
 
 Row = Dict[str, Any]
 TransformFn = Callable[[Row], Row | None]
+
+LOGGER = logging.getLogger(__name__)
+
+_MAX_LOAD_ATTEMPTS = 3
 
 
 def _to_python(value: Any) -> Any:
@@ -68,7 +73,9 @@ async def insert_chunk(session: AsyncSession, table, rows: List[Row]) -> int:
     if pk_columns:
         stmt = stmt.on_conflict_do_nothing(index_elements=pk_columns)
 
-    await session.execute(stmt)
+    result = await session.execute(stmt)
+    if result.rowcount is not None and result.rowcount >= 0:
+        return int(result.rowcount)
     return len(rows)
 
 
@@ -105,7 +112,6 @@ async def load_parquet(
 
         if inserted:
             total_inserted += inserted
-            await session.commit()
 
     return total_inserted
 
@@ -267,10 +273,13 @@ async def load_table(
 async def load_all_tables(
     data_dir: Path,
     *,
-    chunk_size: int = 1_000,
+    chunk_size: int = 10_000,
     tables: Iterable[str] | None = None,
 ) -> Dict[str, int]:
     """Load all requested tables and return a mapping of inserted row counts."""
+
+    if chunk_size <= 0:
+        raise ValueError("chunk_size must be greater than zero")
 
     requested = list(tables) if tables else DEFAULT_LOAD_ORDER
     available = set(DEFAULT_LOAD_ORDER)
@@ -281,15 +290,33 @@ async def load_all_tables(
     ordered_tables = [table for table in DEFAULT_LOAD_ORDER if table in requested]
 
     results: Dict[str, int] = {}
-    async with AsyncSessionLocal() as session:
-        for table_name in ordered_tables:
-            inserted = await load_table(
-                session,
-                data_dir=data_dir,
-                table_name=table_name,
-                chunk_size=chunk_size,
-            )
-            results[table_name] = inserted
+    for table_name in ordered_tables:
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                async with AsyncSessionLocal() as session:
+                    async with session.begin():
+                        inserted = await load_table(
+                            session,
+                            data_dir=data_dir,
+                            table_name=table_name,
+                            chunk_size=chunk_size,
+                        )
+                results[table_name] = inserted
+                break
+            except DBAPIError as exc:
+                if not exc.connection_invalidated or attempts >= _MAX_LOAD_ATTEMPTS:
+                    raise
+                backoff = min(2 ** (attempts - 1), 30)
+                LOGGER.warning(
+                    "Lost database connection while loading %s (attempt %s/%s); retrying in %s seconds",
+                    table_name,
+                    attempts,
+                    _MAX_LOAD_ATTEMPTS,
+                    backoff,
+                )
+                await asyncio.sleep(backoff)
 
     return results
 
@@ -297,7 +324,7 @@ async def load_all_tables(
 def load_all_tables_sync(
     data_dir: Path,
     *,
-    chunk_size: int = 1_000,
+    chunk_size: int = 10_000,
     tables: Iterable[str] | None = None,
 ) -> Dict[str, int]:
     """Synchronous wrapper around :func:`load_all_tables`."""

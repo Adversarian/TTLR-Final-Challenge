@@ -91,6 +91,18 @@ class BaseProduct(Base):
     __table_args__ = (
         Index("idx_base_products_category", "category_id"),
         Index("idx_base_products_brand", "brand_id"),
+        Index(
+            "idx_base_products_persian_name_trgm",
+            "persian_name",
+            postgresql_using="gin",
+            postgresql_ops={"persian_name": "gin_trgm_ops"},
+        ),
+        Index(
+            "idx_base_products_english_name_trgm",
+            "english_name",
+            postgresql_using="gin",
+            postgresql_ops={"english_name": "gin_trgm_ops"},
+        ),
     )
 
 
