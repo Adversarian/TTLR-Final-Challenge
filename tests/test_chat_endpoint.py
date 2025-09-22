@@ -141,7 +141,6 @@ def test_image_routing_when_text_is_last(monkeypatch: pytest.MonkeyPatch) -> Non
         "member_random_keys": None,
     }
 
-
 def test_invalid_image_payload_returns_400(monkeypatch: pytest.MonkeyPatch) -> None:
     """Malformed base64 data should raise a client error before hitting the agent."""
 
