@@ -262,11 +262,18 @@
 ### **سناریو شش**
 
 **هدف:** کاربر دنبال این هست که بدونه آبجکت اصلی موجود در یک عکس چی هست؟ ممکن هست چندین شیء در تصویر موجود باشد اما با توجه اطلاعات محصول باید به آن پاسخ دهید  
-**خروجی:** آبجکت و یا موضوع اصلی موجود در عکس رو به کاربر بگیم.
+**خروجی:** آبجکت و یا موضوع اصلی موجود در عکس رو به کاربر بگیم.  
+**مثال:**
 
 | ورودی (Request) | خروجی (Response) |
 | ----- | ----- |
-| { "chat\_id": "q5-abc", "messages": \[ { "type": "text", "content": "شیء و مفهوم اصلی در تصویر چیست؟" }, { "type": "image", "content": "data:image/jpeg;base64,\<image-base64\>" } \] } | { "message": "صندلی", "base\_random\_keys": null, "member\_random\_keys": null } |
+| { "chat\_id": "q5-abc", "messages": \[ { "type": "text", "content": "شیء و مفهوم اصلی در تصویر چیست؟" }, { "type": "image", "content": "data:image/jpeg;base64,\<image-base64\>" } \] } | { "message": "پتو", "base\_random\_keys": null, "member\_random\_keys": null } |
+
+[لینک](https://image.torob.com/base/images/7i/p6/7ip6Yt4qrJWb_ra8.jpg) تصویر در مثال بالا  
+برای انکود کردن تصاویر به شکل زیر عمل شده:
+
+| import base64 import requests  def get\_base64\_encoded\_image(image\_url: str):    response \= requests.get(image\_url)    response.raise\_for\_status()    image\_data \= response.content    base64\_image \= base64.b64encode(image\_data).decode("utf-8")    assert base64.b64decode(base64\_image) \== image\_data    return base64\_image  |
+| ----- |
 
 **تاریخ فعال‌سازی:‌** ۲۷ شهریور  
 **امتیاز: ۱۰۰**
