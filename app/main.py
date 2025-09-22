@@ -103,7 +103,7 @@ async def chat_endpoint(
             deps=deps,
             usage_limits=UsageLimits(
                 request_limit=10,
-                tool_calls_limit=5,
+                tool_calls_limit=15,
             ),
         )
     except Exception as exc:  # pragma: no cover - defensive logging path
