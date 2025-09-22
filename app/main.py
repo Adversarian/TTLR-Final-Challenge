@@ -102,7 +102,7 @@ async def chat_endpoint(
             user_prompt=aggregated_prompt,
             deps=deps,
             usage_limits=UsageLimits(
-                request_limit=10,
+                request_limit=20,
                 tool_calls_limit=10,
             ),
         )
