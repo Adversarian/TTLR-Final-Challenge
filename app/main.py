@@ -157,8 +157,8 @@ async def chat_endpoint(
                 user_prompt=prompt_segments,
                 deps=deps,
                 usage_limits=UsageLimits(
-                    request_limit=8,
-                    tool_calls_limit=10,
+                    request_limit=3,
+                    tool_calls_limit=2,
                 ),
             )
         except Exception as exc:  # pragma: no cover - defensive logging path
@@ -184,8 +184,8 @@ async def chat_endpoint(
             user_prompt=aggregated_prompt,
             deps=deps,
             usage_limits=UsageLimits(
-                request_limit=10,
-                tool_calls_limit=15,
+                request_limit=5,
+                tool_calls_limit=8,
             ),
         )
     except Exception as exc:  # pragma: no cover - defensive logging path
