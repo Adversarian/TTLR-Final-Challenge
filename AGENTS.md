@@ -9,6 +9,8 @@
 - The monolithic `app/agent.py` module has been decomposed into an `app/agent/` package with dedicated files for dependencies, schemas, tools, prompts, and the agent factory to keep the codebase maintainable.
 - The system prompt now teaches the model how to compare multiple candidate products in one turn while still returning a single base key.
 - The OpenAI client enables `parallel_tool_calls` so the runtime can execute independent catalogue lookups concurrently when the model requests it.
+- Base product ingestion now preserves the raw list of member random keys from the dataset in addition to the normalised `members` table for parity with the published schema.
+- Prompting updates steer the agent to craft richer product search queries, avoid duplicate tool calls, and finish once confident instead of looping on identical tool invocations.
 
 ## Database indexes
 - `base_products`
@@ -27,3 +29,4 @@
 - Maintain parity across scenarios when enhancing prompts—new rules should describe general behaviours (e.g., comparisons, confidence handling) instead of referencing specific test IDs.
 - Run `uv run pytest` (and any other affected checks) before completing a task to keep the test suite passing.
 - Update this file whenever project rules or capabilities change so future tasks inherit accurate guidance.
+- Keep tool descriptions aligned with their real capabilities (search terms can include distinctive attributes; seller statistics accepts only the base random key with an optional city filter and returns the full aggregate payload).

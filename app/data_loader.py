@@ -159,6 +159,7 @@ def _transform_base_product(row: Row) -> Row:
         "brand_id": int(brand_id) if brand_id is not None else None,
         "extra_features": _maybe_json(row.get("extra_features"), {}),
         "image_url": _maybe_none(row.get("image_url")),
+        "member_random_keys": _maybe_json(row.get("members"), []),
     }
 
 
