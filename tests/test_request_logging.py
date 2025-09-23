@@ -32,6 +32,12 @@ class _DummyRequest(BaseModel):
     messages: list[_DummyMessage]
 
 
+class _DummyResponse(BaseModel):
+    """Simple response schema captured by the logger during tests."""
+
+    message: str
+
+
 def test_logger_groups_entries_and_persists_on_close(tmp_path) -> None:
     """Multiple requests should be grouped by their chat identifier."""
 
@@ -44,17 +50,32 @@ def test_logger_groups_entries_and_persists_on_close(tmp_path) -> None:
                 messages=[_DummyMessage(type="text", content="first")],
             )
         )
+        await logger.log_chat_response(
+            "test-run",
+            _DummyResponse(message="ack-first"),
+            status_code=200,
+        )
         await logger.log_chat_request(
             _DummyRequest(
                 chat_id="test-run",
                 messages=[_DummyMessage(type="text", content="second")],
             )
         )
+        await logger.log_chat_response(
+            "test-run",
+            _DummyResponse(message="ack-second"),
+            status_code=200,
+        )
         await logger.log_chat_request(
             _DummyRequest(
                 chat_id="topic-other",
                 messages=[_DummyMessage(type="text", content="third")],
             )
+        )
+        await logger.log_chat_response(
+            "topic-other",
+            _DummyResponse(message="ack-third"),
+            status_code=200,
         )
         await logger.aclose()
 
@@ -68,8 +89,11 @@ def test_logger_groups_entries_and_persists_on_close(tmp_path) -> None:
     assert len(data["requests"]["test-run"]) == 2
 
     first_entry = data["requests"]["test-run"][0]
-    assert first_entry["messages"][0]["content"] == "first"
-    assert "received_at" in first_entry
+    assert first_entry["request"]["messages"][0]["content"] == "first"
+    assert first_entry["response"]["message"] == "ack-first"
+    assert first_entry["response"]["status_code"] == 200
+    assert "received_at" in first_entry["request"]
+    assert "responded_at" in first_entry["response"]
     assert data["started_at"] <= data["ended_at"]
 
 
@@ -114,3 +138,34 @@ def test_logger_closes_after_inactivity(tmp_path) -> None:
 
     data = json.loads(files[0].read_text(encoding="utf-8"))
     assert list(data["requests"].keys()) == ["test-auto"]
+    assert data["requests"]["test-auto"][0]["response"] is None
+
+
+def test_logger_records_error_status_codes(tmp_path) -> None:
+    """Error responses should record the returned status code."""
+
+    logger = RequestLogger(directory=tmp_path, inactivity_seconds=30)
+
+    async def _exercise() -> None:
+        await logger.log_chat_request(
+            _DummyRequest(
+                chat_id="test-run",
+                messages=[_DummyMessage(type="text", content="payload")],
+            )
+        )
+        await logger.log_chat_response(
+            "test-run",
+            {"detail": "failure"},
+            status_code=500,
+        )
+        await logger.aclose()
+
+    asyncio.run(_exercise())
+
+    files = list(tmp_path.glob("*.json"))
+    assert len(files) == 1
+
+    data = json.loads(files[0].read_text(encoding="utf-8"))
+    entry = data["requests"]["test-run"][0]
+    assert entry["response"]["status_code"] == 500
+    assert entry["response"]["detail"] == "failure"

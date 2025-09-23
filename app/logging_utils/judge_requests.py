@@ -7,7 +7,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from pydantic import BaseModel
 
@@ -29,12 +29,40 @@ class _LogSession:
         self._records: Dict[str, list[dict[str, Any]]] = {}
         self._close_task: Optional[asyncio.Task[None]] = None
 
-    def record(self, chat_id: str, payload: Dict[str, Any], recorded_at: datetime) -> None:
+    def record_request(
+        self, chat_id: str, payload: Dict[str, Any], recorded_at: datetime
+    ) -> None:
         """Store a serialized request payload for the given chat identifier."""
 
-        entry = dict(payload)
-        entry["received_at"] = recorded_at.isoformat()
-        self._records.setdefault(chat_id, []).append(entry)
+        request_payload = dict(payload)
+        request_payload["received_at"] = recorded_at.isoformat()
+        conversation_entry = {"request": request_payload, "response": None}
+        self._records.setdefault(chat_id, []).append(conversation_entry)
+        self.last_activity = recorded_at
+
+    def record_response(
+        self,
+        chat_id: str,
+        payload: Optional[Dict[str, Any]],
+        recorded_at: datetime,
+        status_code: int,
+    ) -> None:
+        """Attach the assistant response to the latest request for the chat."""
+
+        if payload is None:
+            response_payload: Dict[str, Any] = {}
+        else:
+            response_payload = dict(payload)
+
+        response_payload["responded_at"] = recorded_at.isoformat()
+        response_payload["status_code"] = int(status_code)
+        history = self._records.setdefault(chat_id, [])
+
+        if history and history[-1].get("response") is None:
+            history[-1]["response"] = response_payload
+        else:
+            history.append({"request": None, "response": response_payload})
+
         self.last_activity = recorded_at
 
     def schedule_close_task(self, task: asyncio.Task[None]) -> None:
@@ -63,7 +91,16 @@ class _LogSession:
         return {
             "started_at": self.started_at.isoformat(),
             "ended_at": self.last_activity.isoformat(),
-            "requests": {chat_id: list(entries) for chat_id, entries in self._records.items()},
+            "requests": {
+                chat_id: [
+                    {
+                        "request": dict(entry["request"]) if entry["request"] is not None else None,
+                        "response": dict(entry["response"]) if entry["response"] is not None else None,
+                    }
+                    for entry in entries
+                ]
+                for chat_id, entries in self._records.items()
+            },
         }
 
     async def write_to_disk(self) -> Path:
@@ -109,7 +146,37 @@ class RequestLogger:
                 session = _LogSession(self._directory, recorded_at)
                 self._session = session
 
-            session.record(chat_id, payload, recorded_at)
+            session.record_request(chat_id, payload, recorded_at)
+            close_task = asyncio.create_task(self._close_after_timeout(session))
+            session.schedule_close_task(close_task)
+
+    async def log_chat_response(
+        self,
+        chat_id: str,
+        response: BaseModel | Mapping[str, Any] | None,
+        *,
+        status_code: int,
+    ) -> None:
+        """Capture the assistant response associated with a judge request."""
+
+        if not isinstance(chat_id, str) or not chat_id.startswith(_LOGGED_CHAT_PREFIX):
+            return
+
+        if isinstance(response, BaseModel):
+            payload: Optional[Dict[str, Any]] = response.model_dump(mode="json")
+        elif response is None:
+            payload = None
+        else:
+            payload = dict(response)
+        recorded_at = datetime.now(timezone.utc)
+
+        async with self._lock:
+            session = self._session
+            if session is None:
+                session = _LogSession(self._directory, recorded_at)
+                self._session = session
+
+            session.record_response(chat_id, payload, recorded_at, status_code)
             close_task = asyncio.create_task(self._close_after_timeout(session))
             session.schedule_close_task(close_task)
 
