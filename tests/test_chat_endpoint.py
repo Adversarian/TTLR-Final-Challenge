@@ -199,13 +199,13 @@ class _RecorderLogger:
 
     def __init__(self) -> None:
         self.request_chat_ids: list[str] = []
-        self.responses: list[tuple[str, app_main.ChatResponse]] = []
+        self.responses: list[tuple[str, int, object]] = []
 
     async def log_chat_request(self, request):
         self.request_chat_ids.append(request.chat_id)
 
-    async def log_chat_response(self, chat_id, response):
-        self.responses.append((chat_id, response))
+    async def log_chat_response(self, chat_id, response, *, status_code):
+        self.responses.append((chat_id, status_code, response))
 
     async def aclose(self) -> None:  # pragma: no cover - no-op for tests
         return None
@@ -290,6 +290,88 @@ def test_prefixed_chat_ids_trigger_logging(monkeypatch: pytest.MonkeyPatch) -> N
     assert response.status_code == 200
     assert recorder.request_chat_ids == ["test-session"]
     assert [
-        (chat_id, resp.message)
-        for chat_id, resp in recorder.responses
-    ] == [("test-session", "pong")]
+        (chat_id, status_code, resp.message)
+        for chat_id, status_code, resp in recorder.responses
+    ] == [("test-session", 200, "pong")]
+
+
+def test_logger_failures_do_not_block_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Errors raised by the logger should not prevent responding to the judge."""
+
+    app.dependency_overrides[get_session] = _session_override
+
+    class _FailingLogger:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def log_chat_request(self, request):
+            self.calls += 1
+            raise RuntimeError("logger unavailable")
+
+        async def log_chat_response(self, chat_id, response, *, status_code):
+            self.calls += 1
+            raise RuntimeError("logger unavailable")
+
+        async def aclose(self) -> None:  # pragma: no cover - no-op for tests
+            return None
+
+    failing_logger = _FailingLogger()
+    monkeypatch.setattr(app_main, "request_logger", failing_logger)
+    monkeypatch.setattr(request_logging, "request_logger", failing_logger)
+
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "chat_id": "test-session",
+                "messages": [{"type": "text", "content": "ping"}],
+            },
+        )
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["message"] == "pong"
+    assert failing_logger.calls >= 1
+
+
+def test_agent_error_is_logged_with_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failed agent executions should record an error response with status code."""
+
+    app.dependency_overrides[get_session] = _session_override
+    recorder = _RecorderLogger()
+    monkeypatch.setattr(app_main, "request_logger", recorder)
+    monkeypatch.setattr(request_logging, "request_logger", recorder)
+
+    class _FailingAgent:
+        async def run(self, *args, **kwargs):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(app_main, "get_agent", lambda: _FailingAgent())
+
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "chat_id": "test-session",
+                "messages": [{"type": "text", "content": "lookup"}],
+            },
+        )
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 500
+    assert recorder.request_chat_ids == ["test-session"]
+    assert recorder.responses[-1][0] == "test-session"
+    assert recorder.responses[-1][1] == 500
+    payload = recorder.responses[-1][2]
+    assert isinstance(payload, dict)
+    assert payload["detail"] == "Agent execution failed."

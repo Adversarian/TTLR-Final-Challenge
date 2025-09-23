@@ -3,9 +3,10 @@
 import base64
 import binascii
 import io
+import logging
 import zipfile
 from decimal import Decimal, InvalidOperation
-from typing import List, Literal, Optional, Tuple
+from typing import Any, List, Literal, Mapping, Optional, Tuple
 
 from pydantic_ai import BinaryContent
 from pydantic_ai.usage import UsageLimits
@@ -44,6 +45,9 @@ class ChatResponse(BaseModel):
 
 
 app = FastAPI(title="Shopping Assistant API", version="0.1.0")
+
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_key(command_prefix: str, message: str) -> Optional[str]:
@@ -98,135 +102,175 @@ async def chat_endpoint(
     judge to verify that the API is reachable and well-formed.
     """
 
-    await request_logger.log_chat_request(request)
+    async def _safe_log_request() -> None:
+        try:
+            await request_logger.log_chat_request(request)
+        except Exception:  # pragma: no cover - exercised in integration tests
+            logger.exception("Failed to log judge chat request")
 
-    async def _finalize(response: ChatResponse) -> ChatResponse:
-        await request_logger.log_chat_response(request.chat_id, response)
+    async def _safe_log_response(
+        payload: ChatResponse | Mapping[str, Any] | None, status_code: int
+    ) -> None:
+        try:
+            await request_logger.log_chat_response(
+                request.chat_id, payload, status_code=status_code
+            )
+        except Exception:  # pragma: no cover - exercised in integration tests
+            logger.exception("Failed to log judge chat response")
+
+    async def _finalize(
+        response: ChatResponse, status_code: int = 200
+    ) -> ChatResponse:
+        await _safe_log_response(response, status_code)
         return response
 
-    if not request.messages:
-        return await _finalize(ChatResponse(message="No messages provided."))
+    await _safe_log_request()
 
-    text_segments: List[str] = []
-    image_payloads: List[str] = []
-    for message in request.messages:
-        content = message.content
-        stripped = content.strip()
-        if not stripped:
-            continue
-        if message.type == "text":
-            text_segments.append(stripped)
-        elif message.type == "image":
-            image_payloads.append(stripped)
+    try:
+        if not request.messages:
+            return await _finalize(ChatResponse(message="No messages provided."))
 
-    lower_text_segments = [segment.lower() for segment in text_segments]
+        text_segments: List[str] = []
+        image_payloads: List[str] = []
+        for message in request.messages:
+            content = message.content
+            stripped = content.strip()
+            if not stripped:
+                continue
+            if message.type == "text":
+                text_segments.append(stripped)
+            elif message.type == "image":
+                image_payloads.append(stripped)
 
-    if request.chat_id == "sanity-check-ping" or any(
-        segment == "ping" for segment in lower_text_segments
-    ):
-        return await _finalize(ChatResponse(message="pong"))
+        lower_text_segments = [segment.lower() for segment in text_segments]
 
-    for text in text_segments:
-        base_key = _extract_key("return base random key:", text)
-        if base_key:
-            return await _finalize(ChatResponse(base_random_keys=[base_key]))
+        if request.chat_id == "sanity-check-ping" or any(
+            segment == "ping" for segment in lower_text_segments
+        ):
+            return await _finalize(ChatResponse(message="pong"))
 
-    for text in text_segments:
-        member_key = _extract_key("return member random key:", text)
-        if member_key:
+        for text in text_segments:
+            base_key = _extract_key("return base random key:", text)
+            if base_key:
+                return await _finalize(
+                    ChatResponse(base_random_keys=[base_key])
+                )
+
+        for text in text_segments:
+            member_key = _extract_key("return member random key:", text)
+            if member_key:
+                return await _finalize(
+                    ChatResponse(member_random_keys=[member_key])
+                )
+
+        aggregated_prompt = "\n\n".join(text_segments).strip()
+
+        if image_payloads:
+            try:
+                image_bytes, mime_type = _decode_image_payload(image_payloads[-1])
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            agent = get_image_agent()
+            deps = AgentDependencies(
+                session=session, session_factory=AsyncSessionLocal
+            )
+
+            vision_prompt_text = aggregated_prompt
+            if not vision_prompt_text:
+                vision_prompt_text = (
+                    "کاربر تصویری ارسال کرده است. محتوای تصویر را به اختصار توصیف کن."
+                )
+
+            media_type = mime_type or "image/png"
+            prompt_segments = [
+                vision_prompt_text,
+                BinaryContent(data=image_bytes, media_type=media_type),
+            ]
+
+            try:
+                result = await agent.run(
+                    user_prompt=prompt_segments,
+                    deps=deps,
+                    usage_limits=UsageLimits(
+                        request_limit=3,
+                        tool_calls_limit=2,
+                    ),
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging path
+                raise HTTPException(
+                    status_code=500, detail="Vision agent execution failed."
+                ) from exc
+
+            reply = result.output.clipped()
+
             return await _finalize(
-                ChatResponse(member_random_keys=[member_key])
+                ChatResponse(
+                    message=reply.message,
+                    base_random_keys=reply.base_random_keys or None,
+                    member_random_keys=reply.member_random_keys or None,
+                )
+            )
+        if not aggregated_prompt:
+            return await _finalize(
+                ChatResponse(message="No textual message found in the request.")
             )
 
-    aggregated_prompt = "\n\n".join(text_segments).strip()
-
-    if image_payloads:
-        try:
-            image_bytes, mime_type = _decode_image_payload(image_payloads[-1])
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-        agent = get_image_agent()
-        deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
-
-        vision_prompt_text = aggregated_prompt
-        if not vision_prompt_text:
-            vision_prompt_text = (
-                "کاربر تصویری ارسال کرده است. محتوای تصویر را به اختصار توصیف کن."
-            )
-
-        media_type = mime_type or "image/png"
-        prompt_segments = [
-            vision_prompt_text,
-            BinaryContent(data=image_bytes, media_type=media_type),
-        ]
+        agent = get_agent()
+        deps = AgentDependencies(
+            session=session, session_factory=AsyncSessionLocal
+        )
 
         try:
             result = await agent.run(
-                user_prompt=prompt_segments,
+                user_prompt=aggregated_prompt,
                 deps=deps,
                 usage_limits=UsageLimits(
-                    request_limit=3,
-                    tool_calls_limit=2,
+                    request_limit=5,
+                    tool_calls_limit=8,
                 ),
             )
         except Exception as exc:  # pragma: no cover - defensive logging path
             raise HTTPException(
-                status_code=500, detail="Vision agent execution failed."
+                status_code=500, detail="Agent execution failed."
             ) from exc
 
         reply = result.output.clipped()
 
+        message = reply.message
+        if reply.numeric_answer is not None:
+            try:
+                numeric_value = Decimal(reply.numeric_answer)
+            except (
+                InvalidOperation,
+                TypeError,
+            ) as exc:  # pragma: no cover - sanity guard
+                raise HTTPException(
+                    status_code=500,
+                    detail="Agent returned a non-numeric statistic.",
+                ) from exc
+            if not numeric_value.is_finite():
+                raise HTTPException(
+                    status_code=500, detail="Agent returned a non-finite statistic."
+                )
+            message = format(numeric_value.normalize(), "f")
+
         return await _finalize(
             ChatResponse(
-                message=reply.message,
+                message=message,
                 base_random_keys=reply.base_random_keys or None,
                 member_random_keys=reply.member_random_keys or None,
             )
         )
-    if not aggregated_prompt:
-        return await _finalize(
-            ChatResponse(message="No textual message found in the request.")
-        )
-
-    agent = get_agent()
-    deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
-
-    try:
-        result = await agent.run(
-            user_prompt=aggregated_prompt,
-            deps=deps,
-            usage_limits=UsageLimits(
-                request_limit=5,
-                tool_calls_limit=8,
-            ),
-        )
+    except HTTPException as exc:
+        await _safe_log_response({"detail": exc.detail}, exc.status_code)
+        raise
     except Exception as exc:  # pragma: no cover - defensive logging path
-        raise HTTPException(status_code=500, detail="Agent execution failed.") from exc
-
-    reply = result.output.clipped()
-
-    message = reply.message
-    if reply.numeric_answer is not None:
-        try:
-            numeric_value = Decimal(reply.numeric_answer)
-        except (InvalidOperation, TypeError) as exc:  # pragma: no cover - sanity guard
-            raise HTTPException(
-                status_code=500, detail="Agent returned a non-numeric statistic."
-            ) from exc
-        if not numeric_value.is_finite():
-            raise HTTPException(
-                status_code=500, detail="Agent returned a non-finite statistic."
-            )
-        message = format(numeric_value.normalize(), "f")
-
-    return await _finalize(
-        ChatResponse(
-            message=message,
-            base_random_keys=reply.base_random_keys or None,
-            member_random_keys=reply.member_random_keys or None,
+        logger.exception("Unhandled error while processing chat request")
+        await _safe_log_response(
+            {"detail": "Internal server error.", "error": str(exc)}, 500
         )
-    )
+        raise
 
 
 @app.get("/download_logs")
