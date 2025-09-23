@@ -25,7 +25,10 @@ class _LogSession:
         self._directory = directory
         self.started_at = started_at
         self.last_activity = started_at
-        self.file_path = directory / f"judge-requests-{started_at.strftime('%Y%m%dT%H%M%S_%fZ')}.json"
+        self.file_path = (
+            directory
+            / f"judge-requests-{started_at.strftime('%Y%m%dT%H%M%S_%fZ')}.json"
+        )
         self._records: Dict[str, list[dict[str, Any]]] = {}
         self._close_task: Optional[asyncio.Task[None]] = None
 
@@ -94,8 +97,12 @@ class _LogSession:
             "requests": {
                 chat_id: [
                     {
-                        "request": dict(entry["request"]) if entry["request"] is not None else None,
-                        "response": dict(entry["response"]) if entry["response"] is not None else None,
+                        "request": dict(entry["request"])
+                        if entry["request"] is not None
+                        else None,
+                        "response": dict(entry["response"])
+                        if entry["response"] is not None
+                        else None,
                     }
                     for entry in entries
                 ]

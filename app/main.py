@@ -118,9 +118,7 @@ async def chat_endpoint(
         except Exception:  # pragma: no cover - exercised in integration tests
             logger.exception("Failed to log judge chat response")
 
-    async def _finalize(
-        response: ChatResponse, status_code: int = 200
-    ) -> ChatResponse:
+    async def _finalize(response: ChatResponse, status_code: int = 200) -> ChatResponse:
         await _safe_log_response(response, status_code)
         return response
 
@@ -152,16 +150,12 @@ async def chat_endpoint(
         for text in text_segments:
             base_key = _extract_key("return base random key:", text)
             if base_key:
-                return await _finalize(
-                    ChatResponse(base_random_keys=[base_key])
-                )
+                return await _finalize(ChatResponse(base_random_keys=[base_key]))
 
         for text in text_segments:
             member_key = _extract_key("return member random key:", text)
             if member_key:
-                return await _finalize(
-                    ChatResponse(member_random_keys=[member_key])
-                )
+                return await _finalize(ChatResponse(member_random_keys=[member_key]))
 
         aggregated_prompt = "\n\n".join(text_segments).strip()
 
@@ -172,9 +166,7 @@ async def chat_endpoint(
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
 
             agent = get_image_agent()
-            deps = AgentDependencies(
-                session=session, session_factory=AsyncSessionLocal
-            )
+            deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
 
             vision_prompt_text = aggregated_prompt
             if not vision_prompt_text:
@@ -217,9 +209,7 @@ async def chat_endpoint(
             )
 
         agent = get_agent()
-        deps = AgentDependencies(
-            session=session, session_factory=AsyncSessionLocal
-        )
+        deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
 
         try:
             result = await agent.run(
@@ -274,13 +264,17 @@ async def chat_endpoint(
 
 
 @app.get("/download_logs")
-async def download_logs(include_all: bool = Query(False, alias="all")) -> StreamingResponse:
+async def download_logs(
+    include_all: bool = Query(False, alias="all"),
+) -> StreamingResponse:
     """Return the latest judge request log (or all logs) as a ZIP archive."""
 
     await request_logger.aclose()
 
     log_dir = request_logger.directory
-    log_files = sorted(log_dir.glob("judge-requests-*.json"), key=lambda path: path.name)
+    log_files = sorted(
+        log_dir.glob("judge-requests-*.json"), key=lambda path: path.name
+    )
     if not log_files:
         raise HTTPException(status_code=404, detail="No judge request logs available.")
 
@@ -293,7 +287,9 @@ async def download_logs(include_all: bool = Query(False, alias="all")) -> Stream
         archive_name = f"{latest_file.stem}.zip"
 
     zip_buffer = io.BytesIO()
-    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(
+        zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED
+    ) as archive:
         for file_path in files_to_archive:
             archive.write(file_path, arcname=file_path.name)
 

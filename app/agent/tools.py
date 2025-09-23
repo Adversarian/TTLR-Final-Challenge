@@ -338,7 +338,7 @@ PRODUCT_SEARCH_TOOL = Tool(
         "Invoke it at most once per user turn unless you materially change the search string with new evidence—never repeat an identical call. "
         "The fuzzy lookup returns up to 20 of the strongest catalogue matches (best first) with random keys, names, and similarity scores. "
         "If the initial search leaves you uncertain and you lack a better wording, choose the strongest candidate or apologize instead of retrying."
-        "If the search query contains pack quantity but a retrieved product doesn't state pack quantity in its name, assume 1."
+        "If the search query contains pack quantity but a retrieved product doesn't state pack quantity in its name, assume 1 for the retrieved product."
     ),
 )
 

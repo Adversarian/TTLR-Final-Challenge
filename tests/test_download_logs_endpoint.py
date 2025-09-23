@@ -46,7 +46,9 @@ def stub_logger(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> _StubRequest
     return stub
 
 
-def test_download_logs_returns_404_when_no_logs(stub_logger: _StubRequestLogger) -> None:
+def test_download_logs_returns_404_when_no_logs(
+    stub_logger: _StubRequestLogger,
+) -> None:
     """If no log files exist the endpoint should return a 404 error."""
 
     client = TestClient(app)

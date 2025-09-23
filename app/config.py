@@ -144,9 +144,7 @@ def get_settings() -> Settings:
             "TOROB_SEARCH_SIMILARITY_THRESHOLD", 0.3
         ),
         request_log_directory=request_log_dir,
-        request_log_idle_seconds=_int_from_env(
-            "TOROB_REQUEST_LOG_IDLE_SECONDS", 60
-        ),
+        request_log_idle_seconds=_int_from_env("TOROB_REQUEST_LOG_IDLE_SECONDS", 60),
     )
 
 
