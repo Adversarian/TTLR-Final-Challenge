@@ -16,6 +16,7 @@ dependencies = [
     "pydantic-ai>=1.0.10",
     "python-dotenv>=1.1.1",
     "sqlalchemy>=2.0",
+    "tenacity>=9.0.0",
     "uvicorn>=0.36.0",
 ]
 

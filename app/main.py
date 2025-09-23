@@ -13,6 +13,7 @@ from pydantic_ai.usage import UsageLimits
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,6 +91,16 @@ def _decode_image_payload(data: str) -> Tuple[bytes, Optional[str]]:
         raise ValueError("Decoded image payload is empty.")
 
     return image_bytes, mime_type
+
+
+async def _run_agent_with_retry(agent: Any, **kwargs: Any) -> Any:
+    """Execute the agent while retrying once after a short delay on failure."""
+
+    async for attempt in AsyncRetrying(
+        stop=stop_after_attempt(2), wait=wait_fixed(0.25), reraise=True
+    ):
+        with attempt:
+            return await agent.run(**kwargs)
 
 
 @app.post("/chat", response_model=ChatResponse)
@@ -181,7 +192,8 @@ async def chat_endpoint(
             ]
 
             try:
-                result = await agent.run(
+                result = await _run_agent_with_retry(
+                    agent,
                     user_prompt=prompt_segments,
                     deps=deps,
                     usage_limits=UsageLimits(
@@ -212,7 +224,8 @@ async def chat_endpoint(
         deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
 
         try:
-            result = await agent.run(
+            result = await _run_agent_with_retry(
+                agent,
                 user_prompt=aggregated_prompt,
                 deps=deps,
                 usage_limits=UsageLimits(
