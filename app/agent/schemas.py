@@ -134,6 +134,38 @@ class SellerStatistics(BaseModel):
     )
 
 
+class SellerOffer(BaseModel):
+    """Represents an individual seller listing for a base product."""
+
+    member_random_key: str = Field(
+        ..., description="Identifier of the seller's specific listing."
+    )
+    shop_id: int = Field(..., description="Identifier of the shop offering the product.")
+    price: int = Field(..., ge=0, description="Offer price in Tomans.")
+    shop_score: float | None = Field(
+        None, description="Shop score as recorded on the platform."
+    )
+    has_warranty: bool = Field(
+        ..., description="Whether the listing advertises Torob warranty."
+    )
+    city_id: int | None = Field(
+        None, description="Identifier of the city the shop operates in."
+    )
+    city_name: str | None = Field(
+        None, description="Display name of the city the shop operates in."
+    )
+
+
+class SellerOfferList(BaseModel):
+    """Collection of seller offers for a base product."""
+
+    base_random_key: str = Field(..., description="Target base product key.")
+    offers: List[SellerOffer] = Field(
+        default_factory=list,
+        description="Short list of seller offers ordered by the requested ranking.",
+    )
+
+
 class AgentReply(BaseModel):
     """Structured response emitted by the agent."""
 
@@ -176,5 +208,7 @@ __all__ = [
     "FeatureLookupResult",
     "CitySellerStatistics",
     "SellerStatistics",
+    "SellerOffer",
+    "SellerOfferList",
     "AgentReply",
 ]

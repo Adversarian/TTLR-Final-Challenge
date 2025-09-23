@@ -19,6 +19,8 @@ from .schemas import (
     ProductFeature,
     ProductMatch,
     ProductSearchResult,
+    SellerOffer,
+    SellerOfferList,
     SellerStatistics,
 )
 
@@ -329,6 +331,92 @@ async def _collect_seller_statistics(
     )
 
 
+async def _list_seller_offers(
+    ctx: RunContext[AgentDependencies],
+    base_random_key: str,
+    limit: int = 10,
+    city: str | None = None,
+    min_score: float | None = None,
+    min_price: int | None = None,
+    max_price: int | None = None,
+    require_warranty: bool | None = None,
+    order_by: str = "price",
+) -> SellerOfferList:
+    """Return individual seller offers for a base product with ranking support."""
+
+    trimmed_key = base_random_key.strip()
+    if not trimmed_key:
+        return SellerOfferList(base_random_key=base_random_key, offers=[])
+
+    normalized_city = city.strip().lower() if city else None
+    order_key = order_by.strip().lower()
+
+    async with ctx.deps.session_factory() as session:
+        stmt = (
+            select(
+                Member.random_key,
+                Member.price,
+                Shop.id,
+                Shop.score,
+                Shop.has_warranty,
+                City.id,
+                City.name,
+            )
+            .join(Shop, Shop.id == Member.shop_id)
+            .join(City, City.id == Shop.city_id)
+            .where(Member.base_random_key == trimmed_key)
+        )
+
+        if min_price is not None:
+            stmt = stmt.where(Member.price >= int(min_price))
+        if max_price is not None:
+            stmt = stmt.where(Member.price <= int(max_price))
+        if min_score is not None:
+            stmt = stmt.where(Shop.score >= float(min_score))
+        if require_warranty is True:
+            stmt = stmt.where(Shop.has_warranty.is_(True))
+        elif require_warranty is False:
+            stmt = stmt.where(Shop.has_warranty.is_(False))
+        if normalized_city:
+            stmt = stmt.where(func.lower(City.name) == normalized_city)
+
+        if order_key == "score":
+            stmt = stmt.order_by(Shop.score.desc(), Member.price.asc())
+        elif order_key == "warranty":
+            stmt = stmt.order_by(
+                Shop.has_warranty.desc(), Shop.score.desc(), Member.price.asc()
+            )
+        else:
+            stmt = stmt.order_by(Member.price.asc(), Shop.score.desc())
+
+        stmt = stmt.limit(max(1, min(int(limit), 25)))
+        result = await session.execute(stmt)
+
+    offers: List[SellerOffer] = []
+    for (
+        member_key,
+        price,
+        shop_id,
+        score,
+        has_warranty,
+        city_id,
+        city_name,
+    ) in result:
+        offers.append(
+            SellerOffer(
+                member_random_key=member_key,
+                shop_id=int(shop_id),
+                price=int(price),
+                shop_score=float(score) if score is not None else None,
+                has_warranty=bool(has_warranty),
+                city_id=int(city_id) if city_id is not None else None,
+                city_name=city_name,
+            )
+        )
+
+    return SellerOfferList(base_random_key=trimmed_key, offers=offers)
+
+
 PRODUCT_SEARCH_TOOL = Tool(
     _search_base_products,
     name="search_base_products",
@@ -369,9 +457,21 @@ SELLER_STATISTICS_TOOL = Tool(
 )
 
 
+SELLER_OFFERS_TOOL = Tool(
+    _list_seller_offers,
+    name="list_seller_offers",
+    description=(
+        "Once the base product is known, use this to inspect individual seller listings with their price, shop score, warranty status, and city. "
+        "You can filter by city name, minimum shop score, price bounds, or warranty requirements and choose ordering by 'price', 'score', or 'warranty'. "
+        "Keep the requested limit modest (defaults to 10, maximum 25) so responses stay concise."
+    ),
+)
+
+
 __all__ = [
     "PRODUCT_SEARCH_TOOL",
     "FEATURE_LOOKUP_TOOL",
     "SELLER_STATISTICS_TOOL",
+    "SELLER_OFFERS_TOOL",
     "_fetch_feature_details",
 ]

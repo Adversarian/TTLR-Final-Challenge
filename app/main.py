@@ -17,9 +17,17 @@ from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .agent import AgentDependencies, get_agent
+from .agent import (
+    AgentDependencies,
+    AgentReply,
+    RouterRoute,
+    get_agent,
+    get_multi_turn_agent,
+    get_router_agent,
+)
 from .agent.image import get_image_agent
 from .db import AsyncSessionLocal, get_session
+from .conversation import ConversationMessage, conversation_store
 from .logging_utils.judge_requests import request_logger
 
 
@@ -91,6 +99,35 @@ def _decode_image_payload(data: str) -> Tuple[bytes, Optional[str]]:
         raise ValueError("Decoded image payload is empty.")
 
     return image_bytes, mime_type
+
+
+def _response_from_agent_reply(
+    reply: AgentReply,
+) -> Tuple[ChatResponse, Optional[str]]:
+    """Convert an agent reply into the HTTP response payload."""
+
+    message = reply.message
+    if reply.numeric_answer is not None:
+        try:
+            numeric_value = Decimal(reply.numeric_answer)
+        except (InvalidOperation, TypeError) as exc:  # pragma: no cover - guard
+            raise HTTPException(
+                status_code=500,
+                detail="Agent returned a non-numeric statistic.",
+            ) from exc
+        if not numeric_value.is_finite():
+            raise HTTPException(
+                status_code=500,
+                detail="Agent returned a non-finite statistic.",
+            )
+        message = format(numeric_value.normalize(), "f")
+
+    response = ChatResponse(
+        message=message,
+        base_random_keys=reply.base_random_keys or None,
+        member_random_keys=reply.member_random_keys or None,
+    )
+    return response, message
 
 
 async def _run_agent_with_retry(agent: Any, **kwargs: Any) -> Any:
@@ -220,8 +257,80 @@ async def chat_endpoint(
                 ChatResponse(message="No textual message found in the request.")
             )
 
-        agent = get_agent()
         deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
+
+        router_choice = await conversation_store.get_route(request.chat_id)
+
+        if router_choice is None:
+            router_choice = RouterRoute.SINGLE_TURN
+            try:
+                router_agent = get_router_agent()
+                router_result = await _run_agent_with_retry(
+                    router_agent,
+                    user_prompt=aggregated_prompt,
+                    usage_limits=UsageLimits(
+                        request_limit=2,
+                        tool_calls_limit=0,
+                    ),
+                )
+                router_choice = router_result.output.route
+            except Exception:  # pragma: no cover - router fallback
+                logger.exception("Router agent execution failed; defaulting to single-turn")
+
+            await conversation_store.remember_route(request.chat_id, router_choice)
+
+        if router_choice == RouterRoute.MULTI_TURN:
+            await conversation_store.append_message(
+                request.chat_id,
+                ConversationMessage(role="user", content=aggregated_prompt),
+            )
+
+            existing_history = await conversation_store.get_model_history(
+                request.chat_id
+            )
+            history_payload = list(existing_history) if existing_history else None
+
+            multi_agent = get_multi_turn_agent()
+            try:
+                result = await _run_agent_with_retry(
+                    multi_agent,
+                    user_prompt=aggregated_prompt,
+                    deps=deps,
+                    usage_limits=UsageLimits(
+                        request_limit=5,
+                        tool_calls_limit=8,
+                    ),
+                    message_history=history_payload,
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging path
+                raise HTTPException(
+                    status_code=500, detail="Multi-turn agent execution failed."
+                ) from exc
+
+            conversation_history = list(result.all_messages())
+            reply = result.output.clipped()
+            response, final_message = _response_from_agent_reply(reply)
+
+            await conversation_store.append_message(
+                request.chat_id,
+                ConversationMessage(
+                    role="assistant",
+                    content=(final_message or "") if final_message is not None else "",
+                    base_random_keys=reply.base_random_keys,
+                    member_random_keys=reply.member_random_keys,
+                ),
+            )
+
+            await conversation_store.replace_model_history(
+                request.chat_id, conversation_history
+            )
+
+            if reply.member_random_keys:
+                await conversation_store.reset(request.chat_id)
+
+            return await _finalize(response)
+
+        agent = get_agent()
 
         try:
             result = await _run_agent_with_retry(
@@ -239,32 +348,9 @@ async def chat_endpoint(
             ) from exc
 
         reply = result.output.clipped()
+        response, _ = _response_from_agent_reply(reply)
 
-        message = reply.message
-        if reply.numeric_answer is not None:
-            try:
-                numeric_value = Decimal(reply.numeric_answer)
-            except (
-                InvalidOperation,
-                TypeError,
-            ) as exc:  # pragma: no cover - sanity guard
-                raise HTTPException(
-                    status_code=500,
-                    detail="Agent returned a non-numeric statistic.",
-                ) from exc
-            if not numeric_value.is_finite():
-                raise HTTPException(
-                    status_code=500, detail="Agent returned a non-finite statistic."
-                )
-            message = format(numeric_value.normalize(), "f")
-
-        return await _finalize(
-            ChatResponse(
-                message=message,
-                base_random_keys=reply.base_random_keys or None,
-                member_random_keys=reply.member_random_keys or None,
-            )
-        )
+        return await _finalize(response)
     except HTTPException as exc:
         await _safe_log_response({"detail": exc.detail}, exc.status_code)
         raise

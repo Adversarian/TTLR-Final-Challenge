@@ -1,0 +1,57 @@
+"""Factory for the multi-turn shopping assistant."""
+
+from __future__ import annotations
+
+import os
+from functools import lru_cache
+
+from pydantic_ai import Agent, InstrumentationSettings
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.settings import ModelSettings
+
+from .dependencies import AgentDependencies
+from .logging import _ensure_logfire
+from .prompts import MULTI_TURN_SYSTEM_PROMPT
+from .schemas import AgentReply
+from .tools import (
+    FEATURE_LOOKUP_TOOL,
+    PRODUCT_SEARCH_TOOL,
+    SELLER_OFFERS_TOOL,
+    SELLER_STATISTICS_TOOL,
+)
+
+
+@lru_cache(maxsize=1)
+def get_multi_turn_agent() -> Agent[AgentDependencies, AgentReply]:
+    """Return a chat-history aware agent for ambiguous shopping journeys."""
+
+    _ensure_logfire()
+
+    model_name = os.getenv("OPENAI_MODEL", "gpt-4.1")
+    model = OpenAIChatModel(
+        model_name,
+        provider=OpenAIProvider(
+            base_url=os.getenv("OPENAI_BASE_URL"),
+            api_key=os.getenv("OPENAI_API_KEY"),
+        ),
+        settings=ModelSettings(temperature=0.3, parallel_tool_calls=True),
+    )
+
+    return Agent(
+        model=model,
+        output_type=AgentReply,
+        instructions=MULTI_TURN_SYSTEM_PROMPT,
+        deps_type=AgentDependencies,
+        tools=[
+            PRODUCT_SEARCH_TOOL,
+            FEATURE_LOOKUP_TOOL,
+            SELLER_STATISTICS_TOOL,
+            SELLER_OFFERS_TOOL,
+        ],
+        instrument=InstrumentationSettings(),
+        name="multi-turn-shopping-assistant",
+    )
+
+
+__all__ = ["get_multi_turn_agent"]

@@ -17,7 +17,7 @@ os.environ.setdefault("POSTGRES_DB", "torob")
 
 import app.main as app_main
 import app.logging_utils.judge_requests as request_logging
-from app.agent import AgentReply
+from app.agent import AgentReply, RouterRoute
 from app.main import app
 from app.db import get_session
 
@@ -63,6 +63,18 @@ def _override_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure the FastAPI handler uses a stub session factory during tests."""
 
     monkeypatch.setattr(app_main, "AsyncSessionLocal", _DummySessionFactory())
+
+
+@pytest.fixture(autouse=True)
+def _stub_router(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace the router with a deterministic single-turn decision."""
+
+    class _StubRouterAgent:
+        async def run(self, *args, **kwargs):  # pragma: no cover - simple stub
+            return SimpleNamespace(output=SimpleNamespace(route=RouterRoute.SINGLE_TURN))
+
+    monkeypatch.setattr(app_main, "get_router_agent", lambda: _StubRouterAgent())
+    monkeypatch.setattr(app_main, "get_multi_turn_agent", lambda: _StubAgent(AgentReply(message="ignored")))
 
 
 def test_chat_accepts_image_payload(monkeypatch: pytest.MonkeyPatch) -> None:
