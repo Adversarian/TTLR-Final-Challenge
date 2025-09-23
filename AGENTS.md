@@ -17,8 +17,8 @@
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
 - Text-only requests now flow through a lightweight router agent configured by `OPENAI_ROUTER_MODEL` (default `gpt-4.1-mini`). Router outcomes are cached per `chat_id` in `conversation_store` so subsequent turns reuse the same assistant without incurring additional LLM calls.
 - `conversation_store` also records multi-turn chat history and automatically clears both history and routing metadata whenever a seller `member_random_key` is returned, signalling that the conversation is complete.
-- The dedicated multi-turn agent in `app/agent/multi_turn.py` uses the same core catalogue tools as the single-turn workflow but runs with Pydantic-AI `message_history`; each turn pulls prior `ModelMessage` objects from `conversation_store` and persists the updated list via `AgentRunResult.all_messages()`.
-- Scenario 4 now exposes a specialised `list_seller_offers` tool that surfaces individual seller listings (price, score, warranty, city) with lightweight filtering so the multi-turn agent can pick a concrete `member_random_key` without expensive follow-up SQL.
+- The dedicated multi-turn agent now lives in the `app/agent/multi_turn/` package. It reuses the shared catalogue tooling, enables Pydantic-AI `message_history`, and persists the evolving transcript via `AgentRunResult.all_messages()` so every turn starts with the full context already loaded from `conversation_store`.
+- Scenario 4 exposes two specialised tools. `summarize_seller_candidates` batches up to five base product keys to report price ranges, shop counts, score averages, and warranty coverage so the agent can prune weak matches early. `list_seller_offers` still surfaces individual seller listings (price, score, warranty, city) with lightweight filtering so the multi-turn agent can select a precise `member_random_key` without expensive follow-up SQL.
 
 ## Database indexes
 - `base_products`

@@ -7,10 +7,10 @@ from statistics import mean
 from typing import List, Sequence
 
 from pydantic_ai.tools import RunContext, Tool
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, distinct, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..models import BaseProduct, City, Member, Shop
+from ..models import BaseProduct, Brand, Category, City, Member, Shop
 from ..config import settings
 from .dependencies import AgentDependencies
 from .schemas import (
@@ -19,6 +19,8 @@ from .schemas import (
     ProductFeature,
     ProductMatch,
     ProductSearchResult,
+    SellerCandidateSummary,
+    SellerCandidateSummaryList,
     SellerOffer,
     SellerOfferList,
     SellerStatistics,
@@ -417,6 +419,121 @@ async def _list_seller_offers(
     return SellerOfferList(base_random_key=trimmed_key, offers=offers)
 
 
+async def _summarize_candidate_offers(
+    ctx: RunContext[AgentDependencies],
+    base_random_keys: Sequence[str],
+    limit: int = 5,
+) -> SellerCandidateSummaryList:
+    """Return aggregated seller stats for a shortlist of base products."""
+
+    if not base_random_keys:
+        return SellerCandidateSummaryList(
+            requested_base_random_keys=[], summaries=[]
+        )
+
+    try:
+        limit_value = int(limit)
+    except (TypeError, ValueError):  # pragma: no cover - defensive fallback
+        limit_value = 5
+
+    clamp = max(1, min(limit_value, 10))
+    seen: set[str] = set()
+    normalized: List[str] = []
+    for raw_key in base_random_keys:
+        if len(normalized) >= clamp:
+            break
+        if not raw_key:
+            continue
+        trimmed = raw_key.strip()
+        if not trimmed or trimmed in seen:
+            continue
+        seen.add(trimmed)
+        normalized.append(trimmed)
+
+    if not normalized:
+        return SellerCandidateSummaryList(
+            requested_base_random_keys=[], summaries=[]
+        )
+
+    async with ctx.deps.session_factory() as session:
+        warranty_case = case((Shop.has_warranty.is_(True), 1), else_=0)
+        stmt = (
+            select(
+                BaseProduct.random_key.label("base_random_key"),
+                BaseProduct.persian_name.label("persian_name"),
+                BaseProduct.english_name.label("english_name"),
+                Category.title.label("category_title"),
+                Brand.title.label("brand_title"),
+                func.count(Member.random_key).label("total_offers"),
+                func.count(distinct(Member.shop_id)).label("distinct_shops"),
+                func.min(Member.price).label("min_price"),
+                func.max(Member.price).label("max_price"),
+                func.avg(Member.price).label("average_price"),
+                func.min(Shop.score).label("min_score"),
+                func.max(Shop.score).label("max_score"),
+                func.avg(Shop.score).label("average_score"),
+                func.coalesce(func.sum(warranty_case), 0).label(
+                    "offers_with_warranty"
+                ),
+            )
+            .join(Category, Category.id == BaseProduct.category_id)
+            .outerjoin(Brand, Brand.id == BaseProduct.brand_id)
+            .outerjoin(Member, Member.base_random_key == BaseProduct.random_key)
+            .outerjoin(Shop, Shop.id == Member.shop_id)
+            .where(BaseProduct.random_key.in_(normalized))
+            .group_by(
+                BaseProduct.random_key,
+                BaseProduct.persian_name,
+                BaseProduct.english_name,
+                Category.title,
+                Brand.title,
+            )
+        )
+
+        result = await session.execute(stmt)
+
+    summaries_map: dict[str, SellerCandidateSummary] = {}
+    for row in result:
+        mapping = row._mapping
+        base_key: str = mapping["base_random_key"]
+        total_offers = int(mapping["total_offers"] or 0)
+        with_warranty = int(mapping["offers_with_warranty"] or 0)
+        without_warranty = max(total_offers - with_warranty, 0)
+
+        def _convert_int(value: int | None) -> int | None:
+            return int(value) if value is not None else None
+
+        def _convert_float(value: float | None) -> float | None:
+            if value is None:
+                return None
+            return round(float(value), 2)
+
+        summaries_map[base_key] = SellerCandidateSummary(
+            base_random_key=base_key,
+            persian_name=mapping["persian_name"] or "",
+            english_name=mapping["english_name"],
+            category_title=mapping["category_title"] or "",
+            brand_title=mapping["brand_title"],
+            total_offers=total_offers,
+            distinct_shops=int(mapping["distinct_shops"] or 0),
+            offers_with_warranty=with_warranty,
+            offers_without_warranty=without_warranty,
+            min_price=_convert_int(mapping["min_price"]),
+            max_price=_convert_int(mapping["max_price"]),
+            average_price=_convert_float(mapping["average_price"]),
+            min_score=_convert_float(mapping["min_score"]),
+            max_score=_convert_float(mapping["max_score"]),
+            average_score=_convert_float(mapping["average_score"]),
+        )
+
+    summaries = [summaries_map[key] for key in normalized if key in summaries_map]
+
+    return SellerCandidateSummaryList(
+        requested_base_random_keys=normalized,
+        summaries=summaries,
+    )
+
+
 PRODUCT_SEARCH_TOOL = Tool(
     _search_base_products,
     name="search_base_products",
@@ -468,10 +585,21 @@ SELLER_OFFERS_TOOL = Tool(
 )
 
 
+SELLER_CANDIDATE_SUMMARY_TOOL = Tool(
+    _summarize_candidate_offers,
+    name="summarize_seller_candidates",
+    description=(
+        "When you have narrowed the conversation to a handful of candidate base products, call this tool with up to five base_random_keys. "
+        "It returns aggregated price ranges, shop counts, shop scores, and Torob warranty coverage for each key so you can quickly check which products fit the customer's budget and quality expectations before drilling into individual listings."
+    ),
+)
+
+
 __all__ = [
     "PRODUCT_SEARCH_TOOL",
     "FEATURE_LOOKUP_TOOL",
     "SELLER_STATISTICS_TOOL",
     "SELLER_OFFERS_TOOL",
+    "SELLER_CANDIDATE_SUMMARY_TOOL",
     "_fetch_feature_details",
 ]

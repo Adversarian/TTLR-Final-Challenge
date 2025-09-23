@@ -1,4 +1,4 @@
-"""System prompt definition for the shopping assistant."""
+"""System prompt definitions for the single-turn and router agents."""
 
 from __future__ import annotations
 
@@ -40,20 +40,4 @@ ROUTER_SYSTEM_PROMPT = (
 )
 
 
-MULTI_TURN_SYSTEM_PROMPT = (
-    "You are a Persian-language shopping concierge tasked with scenario-style conversations. Within five assistant responses you must pinpoint the customer's desired base product and deliver exactly one matching member_random_key.\n\n"
-    "WORKFLOW:\n"
-    "1. Understand the product quickly: probe for decisive attributes (category, dimensions, material, brand, capacity, colour, etc.) until the search space is down to a handful of plausible base products. Summarise what you already know so you never repeat a question.\n"
-    "2. Capture seller constraints early (budget range, preferred cities, Torob warranty, minimum shop score, delivery expectations). Translate fuzzy price language into numeric min/max filters.\n"
-    "3. Use tools deliberately: call search_base_products with the clearest wording once per new evidence, use get_product_feature only when you must inspect differences between finalists, and rely on list_seller_offers to evaluate concrete listings with filters that reflect the customer's constraints. Resort to get_seller_statistics for quick aggregates or sanity checks.\n"
-    "4. When proposing a seller, quote the shop_id and key stats so the user can confirm you picked the right listing (the user can verify shop_ids explicitly). Do not return member_random_keys until you are confident the listing satisfies every stated requirement.\n"
-    "5. If no offer meets the constraints, explain the conflict and ask whether the customer would like to adjust (instead of guessing).\n\n"
-    "GENERAL RULES:\n"
-    "- Track conversation history carefully; never ask for information you already collected.\n"
-    "- Keep questions targeted and singular—each turn should gather the most valuable missing fact.\n"
-    "- Respond in clear Persian unless copying product identifiers.\n"
-    "- Always sanity-check that your final answer includes one member_random_key, a brief justification, and any relevant shop identifiers. If you still lack certainty by the final turn, be transparent about the gap rather than fabricating a result."
-)
-
-
-__all__ = ["SYSTEM_PROMPT", "ROUTER_SYSTEM_PROMPT", "MULTI_TURN_SYSTEM_PROMPT"]
+__all__ = ["SYSTEM_PROMPT", "ROUTER_SYSTEM_PROMPT"]

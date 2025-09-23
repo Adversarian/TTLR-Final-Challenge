@@ -1,4 +1,4 @@
-"""Factory for the multi-turn shopping assistant."""
+"""Factory for constructing the multi-turn shopping assistant."""
 
 from __future__ import annotations
 
@@ -10,16 +10,17 @@ from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
-from .dependencies import AgentDependencies
-from .logging import _ensure_logfire
-from .prompts import MULTI_TURN_SYSTEM_PROMPT
-from .schemas import AgentReply
-from .tools import (
+from ..dependencies import AgentDependencies
+from ..logging import _ensure_logfire
+from ..schemas import AgentReply
+from ..tools import (
     FEATURE_LOOKUP_TOOL,
     PRODUCT_SEARCH_TOOL,
+    SELLER_CANDIDATE_SUMMARY_TOOL,
     SELLER_OFFERS_TOOL,
     SELLER_STATISTICS_TOOL,
 )
+from .prompts import MULTI_TURN_SYSTEM_PROMPT
 
 
 @lru_cache(maxsize=1)
@@ -46,6 +47,7 @@ def get_multi_turn_agent() -> Agent[AgentDependencies, AgentReply]:
         tools=[
             PRODUCT_SEARCH_TOOL,
             FEATURE_LOOKUP_TOOL,
+            SELLER_CANDIDATE_SUMMARY_TOOL,
             SELLER_STATISTICS_TOOL,
             SELLER_OFFERS_TOOL,
         ],

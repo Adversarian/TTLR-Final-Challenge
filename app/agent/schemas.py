@@ -134,6 +134,67 @@ class SellerStatistics(BaseModel):
     )
 
 
+class SellerCandidateSummary(BaseModel):
+    """High-level snapshot describing a base product's seller landscape."""
+
+    base_random_key: str = Field(..., description="Candidate base product key.")
+    persian_name: str = Field(
+        ..., description="Canonical Persian name associated with the base product."
+    )
+    english_name: str | None = Field(
+        None, description="English name of the base product when available."
+    )
+    category_title: str = Field(
+        ..., description="Category title that contains this base product.",
+    )
+    brand_title: str | None = Field(
+        None, description="Brand title associated with the base product when present."
+    )
+    total_offers: int = Field(
+        ..., ge=0, description="Total number of seller listings for this base product."
+    )
+    distinct_shops: int = Field(
+        ..., ge=0, description="Count of unique shops offering this base product."
+    )
+    offers_with_warranty: int = Field(
+        ..., ge=0, description="Seller listings that advertise Torob warranty."
+    )
+    offers_without_warranty: int = Field(
+        ..., ge=0, description="Seller listings without Torob warranty."
+    )
+    min_price: int | None = Field(
+        None, description="Cheapest price observed among the offers (Tomans)."
+    )
+    max_price: int | None = Field(
+        None, description="Most expensive price observed among the offers (Tomans)."
+    )
+    average_price: float | None = Field(
+        None, description="Average price of the offers when at least one price exists."
+    )
+    min_score: float | None = Field(
+        None, description="Lowest shop score recorded among the offers."
+    )
+    max_score: float | None = Field(
+        None, description="Highest shop score recorded among the offers."
+    )
+    average_score: float | None = Field(
+        None, description="Average shop score when at least one score is available."
+    )
+
+
+class SellerCandidateSummaryList(BaseModel):
+    """Collection of seller landscape snapshots for candidate base products."""
+
+    requested_base_random_keys: List[str] = Field(
+        default_factory=list,
+        description="Base product keys requested in the summarisation call (order preserved).",
+    )
+    summaries: List[SellerCandidateSummary] = Field(
+        default_factory=list,
+        description="Summaries returned for the subset of base products found in the catalogue.",
+    )
+
+
 class SellerOffer(BaseModel):
     """Represents an individual seller listing for a base product."""
 
