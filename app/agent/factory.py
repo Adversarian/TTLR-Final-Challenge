@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import os
 from threading import Lock
-from time import monotonic
+
+from cachetools import TTLCache
 
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
+
+from app.config import CACHE_TTL_SECONDS
 
 from .dependencies import AgentDependencies
 from .logging import _ensure_logfire
@@ -22,10 +25,11 @@ from .tools import (
 )
 
 
-_CACHE_TTL_SECONDS = 120.0
+_AGENT_CACHE_KEY = "agent"
+_agent_cache: TTLCache[str, Agent[AgentDependencies, AgentReply]] = TTLCache(
+    maxsize=1, ttl=CACHE_TTL_SECONDS
+)
 _agent_lock = Lock()
-_cached_agent: Agent[AgentDependencies, AgentReply] | None = None
-_last_access: float = 0.0
 
 
 def _build_agent() -> Agent[AgentDependencies, AgentReply]:
@@ -54,19 +58,14 @@ def _build_agent() -> Agent[AgentDependencies, AgentReply]:
 
 
 def get_agent() -> Agent[AgentDependencies, AgentReply]:
-    """Return a cached agent, refreshing it after two minutes of inactivity."""
+    """Return a cached agent instance refreshed after idle expiration."""
 
-    global _cached_agent, _last_access
-
-    now = monotonic()
     with _agent_lock:
-        if (
-            _cached_agent is None
-            or now - _last_access > _CACHE_TTL_SECONDS
-        ):
-            _cached_agent = _build_agent()
-        _last_access = now
-        return _cached_agent
+        agent = _agent_cache.get(_AGENT_CACHE_KEY)
+        if agent is None:
+            agent = _build_agent()
+        _agent_cache[_AGENT_CACHE_KEY] = agent
+        return agent
 
 
 __all__ = ["get_agent"]

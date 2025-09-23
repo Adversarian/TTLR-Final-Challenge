@@ -95,7 +95,7 @@ def _int_from_env(key: str, default: int) -> int:
 
 
 def _float_from_env(key: str, default: float) -> float:
-    """Parse a floating-point value from the environment."""
+    """Parse a floating-point value in the inclusive range ``[0.0, 1.0]``."""
 
     raw_value = os.getenv(key)
     if raw_value is None:
@@ -110,6 +110,26 @@ def _float_from_env(key: str, default: float) -> float:
 
     if not 0.0 <= value <= 1.0:
         raise RuntimeError(f"Environment variable '{key}' must be between 0.0 and 1.0")
+
+    return value
+
+
+def _positive_float_from_env(key: str, default: float) -> float:
+    """Parse a strictly positive floating-point value from the environment."""
+
+    raw_value = os.getenv(key)
+    if raw_value is None:
+        return default
+
+    try:
+        value = float(raw_value)
+    except ValueError as exc:  # pragma: no cover - defensive programming
+        raise RuntimeError(
+            f"Environment variable '{key}' must be a floating-point number"
+        ) from exc
+
+    if value <= 0:
+        raise RuntimeError(f"Environment variable '{key}' must be greater than zero")
 
     return value
 
@@ -149,3 +169,9 @@ def get_settings() -> Settings:
 
 
 settings = get_settings()
+
+
+CACHE_TTL_SECONDS = _positive_float_from_env("CACHE_TTL_SECONDS", 120.0)
+
+
+__all__ = ["settings", "CACHE_TTL_SECONDS"]

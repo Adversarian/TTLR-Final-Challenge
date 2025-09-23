@@ -5,13 +5,16 @@ from __future__ import annotations
 import os
 from enum import Enum
 from threading import Lock
-from time import monotonic
+
+from cachetools import TTLCache
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
+
+from app.config import CACHE_TTL_SECONDS
 
 from .logging import _ensure_logfire
 from .prompts import ROUTER_SYSTEM_PROMPT
@@ -32,10 +35,11 @@ class RouterDecision(BaseModel):
     )
 
 
-_CACHE_TTL_SECONDS = 120.0
+_AGENT_CACHE_KEY = "router"
+_router_cache: TTLCache[str, Agent[None, RouterDecision]] = TTLCache(
+    maxsize=1, ttl=CACHE_TTL_SECONDS
+)
 _router_lock = Lock()
-_router_agent: Agent[None, RouterDecision] | None = None
-_router_last_access: float = 0.0
 
 
 def _build_router_agent() -> Agent[None, RouterDecision]:
@@ -63,19 +67,14 @@ def _build_router_agent() -> Agent[None, RouterDecision]:
 
 
 def get_router_agent() -> Agent[None, RouterDecision]:
-    """Return a cached router agent, refreshing it after two idle minutes."""
+    """Return a cached router agent refreshed after idle expiration."""
 
-    global _router_agent, _router_last_access
-
-    now = monotonic()
     with _router_lock:
-        if (
-            _router_agent is None
-            or now - _router_last_access > _CACHE_TTL_SECONDS
-        ):
-            _router_agent = _build_router_agent()
-        _router_last_access = now
-        return _router_agent
+        agent = _router_cache.get(_AGENT_CACHE_KEY)
+        if agent is None:
+            agent = _build_router_agent()
+        _router_cache[_AGENT_CACHE_KEY] = agent
+        return agent
 
 
 __all__ = ["RouterDecision", "RouterRoute", "get_router_agent"]
