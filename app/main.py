@@ -2,12 +2,15 @@
 
 import base64
 import binascii
+import io
+import zipfile
 from decimal import Decimal, InvalidOperation
 from typing import List, Literal, Optional, Tuple
 
 from pydantic_ai import BinaryContent
 from pydantic_ai.usage import UsageLimits
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -214,6 +217,35 @@ async def chat_endpoint(
     )
 
 
+@app.get("/download_logs")
+async def download_logs(include_all: bool = Query(False, alias="all")) -> StreamingResponse:
+    """Return the latest judge request log (or all logs) as a ZIP archive."""
+
+    await request_logger.aclose()
+
+    log_dir = request_logger.directory
+    log_files = sorted(log_dir.glob("judge-requests-*.json"), key=lambda path: path.name)
+    if not log_files:
+        raise HTTPException(status_code=404, detail="No judge request logs available.")
+
+    if include_all:
+        files_to_archive = log_files
+        archive_name = "judge-requests-all.zip"
+    else:
+        latest_file = log_files[-1]
+        files_to_archive = [latest_file]
+        archive_name = f"{latest_file.stem}.zip"
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for file_path in files_to_archive:
+            archive.write(file_path, arcname=file_path.name)
+
+    zip_buffer.seek(0)
+    headers = {"Content-Disposition": f'attachment; filename="{archive_name}"'}
+    return StreamingResponse(zip_buffer, media_type="application/zip", headers=headers)
+
+
 async def _shutdown_request_logger() -> None:
     """Ensure any pending judge logs are flushed to disk."""
 
@@ -226,4 +258,5 @@ app.add_event_handler("shutdown", _shutdown_request_logger)
 __all__ = [
     "app",
     "chat_endpoint",
+    "download_logs",
 ]
