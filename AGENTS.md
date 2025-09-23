@@ -36,3 +36,4 @@
 - Run `uv run pytest` (and any other affected checks) before completing a task to keep the test suite passing.
 - Update this file whenever project rules or capabilities change so future tasks inherit accurate guidance.
 - Keep tool descriptions aligned with their real capabilities (search terms can include distinctive attributes; seller statistics accepts only the base random key with an optional city filter and returns the full aggregate payload).
+- Enclose every `agent.run` invocation in the shared `_run_agent_with_retry` helper so retries remain consistent across the API.
