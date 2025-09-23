@@ -36,7 +36,7 @@ ROUTER_SYSTEM_PROMPT = (
     " or otherwise fails to name a precise Torob base product.\n"
     "Return 'single_turn' when the request already references a specific product, attribute, price metric, or comparison that can be answered deterministically in one reply.\n"
     "Ignore pleasantries and focus on the substance of the most recent user message.\n"
-    "Always output the chosen label followed by a concise reason that cites the cues you relied on."
+    "Reply with only 'single_turn' or 'multi_turn'. Do not include explanations or additional words."
 )
 
 

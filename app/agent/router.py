@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import os
 from enum import Enum
-from functools import lru_cache
+from threading import Lock
+from time import monotonic
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, InstrumentationSettings
@@ -29,17 +30,16 @@ class RouterDecision(BaseModel):
     route: RouterRoute = Field(
         ..., description="Destination agent that should handle the request."
     )
-    reason: str | None = Field(
-        None,
-        description=(
-            "Short natural-language justification for the chosen route."
-        ),
-    )
 
 
-@lru_cache(maxsize=1)
-def get_router_agent() -> Agent[None, RouterDecision]:
-    """Return an agent that classifies whether a chat needs multiple turns."""
+_CACHE_TTL_SECONDS = 120.0
+_router_lock = Lock()
+_router_agent: Agent[None, RouterDecision] | None = None
+_router_last_access: float = 0.0
+
+
+def _build_router_agent() -> Agent[None, RouterDecision]:
+    """Construct a fresh router agent instance."""
 
     _ensure_logfire()
 
@@ -60,6 +60,22 @@ def get_router_agent() -> Agent[None, RouterDecision]:
         instrument=InstrumentationSettings(),
         name="shopping-router",
     )
+
+
+def get_router_agent() -> Agent[None, RouterDecision]:
+    """Return a cached router agent, refreshing it after two idle minutes."""
+
+    global _router_agent, _router_last_access
+
+    now = monotonic()
+    with _router_lock:
+        if (
+            _router_agent is None
+            or now - _router_last_access > _CACHE_TTL_SECONDS
+        ):
+            _router_agent = _build_router_agent()
+        _router_last_access = now
+        return _router_agent
 
 
 __all__ = ["RouterDecision", "RouterRoute", "get_router_agent"]

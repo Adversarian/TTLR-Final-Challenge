@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from functools import lru_cache
+from threading import Lock
+from time import monotonic
 
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -21,9 +22,14 @@ from .tools import (
 )
 
 
-@lru_cache(maxsize=1)
-def get_agent() -> Agent[AgentDependencies, AgentReply]:
-    """Return a configured agent instance with tool and logging support."""
+_CACHE_TTL_SECONDS = 120.0
+_agent_lock = Lock()
+_cached_agent: Agent[AgentDependencies, AgentReply] | None = None
+_last_access: float = 0.0
+
+
+def _build_agent() -> Agent[AgentDependencies, AgentReply]:
+    """Construct a new shopping assistant instance."""
 
     _ensure_logfire()
 
@@ -45,6 +51,22 @@ def get_agent() -> Agent[AgentDependencies, AgentReply]:
         instrument=InstrumentationSettings(),
         name="shopping-assistant",
     )
+
+
+def get_agent() -> Agent[AgentDependencies, AgentReply]:
+    """Return a cached agent, refreshing it after two minutes of inactivity."""
+
+    global _cached_agent, _last_access
+
+    now = monotonic()
+    with _agent_lock:
+        if (
+            _cached_agent is None
+            or now - _last_access > _CACHE_TTL_SECONDS
+        ):
+            _cached_agent = _build_agent()
+        _last_access = now
+        return _cached_agent
 
 
 __all__ = ["get_agent"]

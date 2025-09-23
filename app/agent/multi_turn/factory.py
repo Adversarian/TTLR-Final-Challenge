@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from functools import lru_cache
+from threading import Lock
+from time import monotonic
 
 from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIChatModel
@@ -23,9 +24,14 @@ from ..tools import (
 from .prompts import MULTI_TURN_SYSTEM_PROMPT
 
 
-@lru_cache(maxsize=1)
-def get_multi_turn_agent() -> Agent[AgentDependencies, AgentReply]:
-    """Return a chat-history aware agent for ambiguous shopping journeys."""
+_CACHE_TTL_SECONDS = 120.0
+_agent_lock = Lock()
+_cached_agent: Agent[AgentDependencies, AgentReply] | None = None
+_last_access: float = 0.0
+
+
+def _build_multi_turn_agent() -> Agent[AgentDependencies, AgentReply]:
+    """Construct a new multi-turn agent instance."""
 
     _ensure_logfire()
 
@@ -54,6 +60,22 @@ def get_multi_turn_agent() -> Agent[AgentDependencies, AgentReply]:
         instrument=InstrumentationSettings(),
         name="multi-turn-shopping-assistant",
     )
+
+
+def get_multi_turn_agent() -> Agent[AgentDependencies, AgentReply]:
+    """Return a cached multi-turn agent refreshed after two idle minutes."""
+
+    global _cached_agent, _last_access
+
+    now = monotonic()
+    with _agent_lock:
+        if (
+            _cached_agent is None
+            or now - _last_access > _CACHE_TTL_SECONDS
+        ):
+            _cached_agent = _build_multi_turn_agent()
+        _last_access = now
+        return _cached_agent
 
 
 __all__ = ["get_multi_turn_agent"]
