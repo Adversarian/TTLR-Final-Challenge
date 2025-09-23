@@ -100,8 +100,12 @@ async def chat_endpoint(
 
     await request_logger.log_chat_request(request)
 
+    async def _finalize(response: ChatResponse) -> ChatResponse:
+        await request_logger.log_chat_response(request.chat_id, response)
+        return response
+
     if not request.messages:
-        return ChatResponse(message="No messages provided.")
+        return await _finalize(ChatResponse(message="No messages provided."))
 
     text_segments: List[str] = []
     image_payloads: List[str] = []
@@ -120,17 +124,19 @@ async def chat_endpoint(
     if request.chat_id == "sanity-check-ping" or any(
         segment == "ping" for segment in lower_text_segments
     ):
-        return ChatResponse(message="pong")
+        return await _finalize(ChatResponse(message="pong"))
 
     for text in text_segments:
         base_key = _extract_key("return base random key:", text)
         if base_key:
-            return ChatResponse(base_random_keys=[base_key])
+            return await _finalize(ChatResponse(base_random_keys=[base_key]))
 
     for text in text_segments:
         member_key = _extract_key("return member random key:", text)
         if member_key:
-            return ChatResponse(member_random_keys=[member_key])
+            return await _finalize(
+                ChatResponse(member_random_keys=[member_key])
+            )
 
     aggregated_prompt = "\n\n".join(text_segments).strip()
 
@@ -171,13 +177,17 @@ async def chat_endpoint(
 
         reply = result.output.clipped()
 
-        return ChatResponse(
-            message=reply.message,
-            base_random_keys=reply.base_random_keys or None,
-            member_random_keys=reply.member_random_keys or None,
+        return await _finalize(
+            ChatResponse(
+                message=reply.message,
+                base_random_keys=reply.base_random_keys or None,
+                member_random_keys=reply.member_random_keys or None,
+            )
         )
     if not aggregated_prompt:
-        return ChatResponse(message="No textual message found in the request.")
+        return await _finalize(
+            ChatResponse(message="No textual message found in the request.")
+        )
 
     agent = get_agent()
     deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
@@ -210,10 +220,12 @@ async def chat_endpoint(
             )
         message = format(numeric_value.normalize(), "f")
 
-    return ChatResponse(
-        message=message,
-        base_random_keys=reply.base_random_keys or None,
-        member_random_keys=reply.member_random_keys or None,
+    return await _finalize(
+        ChatResponse(
+            message=message,
+            base_random_keys=reply.base_random_keys or None,
+            member_random_keys=reply.member_random_keys or None,
+        )
     )
 
 

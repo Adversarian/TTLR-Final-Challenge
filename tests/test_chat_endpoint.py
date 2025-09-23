@@ -198,10 +198,14 @@ class _RecorderLogger:
     """Test helper capturing chat identifiers that trigger logging."""
 
     def __init__(self) -> None:
-        self.chat_ids: list[str] = []
+        self.request_chat_ids: list[str] = []
+        self.responses: list[tuple[str, app_main.ChatResponse]] = []
 
     async def log_chat_request(self, request):
-        self.chat_ids.append(request.chat_id)
+        self.request_chat_ids.append(request.chat_id)
+
+    async def log_chat_response(self, chat_id, response):
+        self.responses.append((chat_id, response))
 
     async def aclose(self) -> None:  # pragma: no cover - no-op for tests
         return None
@@ -284,4 +288,8 @@ def test_prefixed_chat_ids_trigger_logging(monkeypatch: pytest.MonkeyPatch) -> N
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert recorder.chat_ids == ["test-session"]
+    assert recorder.request_chat_ids == ["test-session"]
+    assert [
+        (chat_id, resp.message)
+        for chat_id, resp in recorder.responses
+    ] == [("test-session", "pong")]
