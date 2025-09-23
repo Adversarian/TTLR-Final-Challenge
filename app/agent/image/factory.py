@@ -13,6 +13,7 @@ from pydantic_ai.settings import ModelSettings
 from ..dependencies import AgentDependencies
 from ..logging import _ensure_logfire
 from ..schemas import AgentReply
+from ..tools import PRODUCT_SEARCH_TOOL
 from .prompts import SYSTEM_PROMPT
 
 
@@ -37,7 +38,7 @@ def get_image_agent() -> Agent[AgentDependencies, AgentReply]:
         output_type=AgentReply,
         instructions=SYSTEM_PROMPT,
         deps_type=AgentDependencies,
-        tools=[],
+        tools=[PRODUCT_SEARCH_TOOL],
         instrument=InstrumentationSettings(),
         name="vision-shopping-assistant",
     )
