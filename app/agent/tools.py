@@ -16,9 +16,12 @@ from .dependencies import AgentDependencies
 from .schemas import (
     CitySellerStatistics,
     FeatureLookupResult,
+    FeatureUnionResult,
+    ProductCandidateWithFeatures,
     ProductFeature,
     ProductMatch,
     ProductSearchResult,
+    ProductSearchWithFeaturesResult,
     SellerCandidateSummary,
     SellerCandidateSummaryList,
     SellerOffer,
@@ -157,6 +160,137 @@ async def _search_base_products(
     return ProductSearchResult(query=normalized, matches=list(matches))
 
 
+async def _search_bases_with_features(
+    ctx: RunContext[AgentDependencies],
+    query: str,
+    limit: int = 10,
+    feature_limit: int = 25,
+) -> ProductSearchWithFeaturesResult:
+    """Search for base products and include representative feature details."""
+
+    normalized = _normalize_text(query)
+
+    try:
+        candidate_limit = max(1, min(int(limit), 10))
+    except (TypeError, ValueError):  # pragma: no cover - defensive parsing
+        candidate_limit = 10
+
+    try:
+        feature_cap = max(1, min(int(feature_limit), 50))
+    except (TypeError, ValueError):  # pragma: no cover - defensive parsing
+        feature_cap = 25
+
+    async with ctx.deps.session_factory() as session:
+        direct_match = await _find_product_by_key(session, query)
+        matches = await _fetch_top_matches(
+            session, normalized, limit=candidate_limit
+        )
+
+        ordered: List[ProductMatch] = []
+        seen_keys: set[str] = set()
+
+        def _append(match: ProductMatch) -> None:
+            if match.random_key in seen_keys:
+                return
+            seen_keys.add(match.random_key)
+            ordered.append(match)
+
+        if direct_match is not None:
+            _append(direct_match)
+        for match in matches:
+            _append(match)
+
+        if not ordered:
+            return ProductSearchWithFeaturesResult(
+                query=normalized, candidates=[]
+            )
+
+        base_keys = [match.random_key for match in ordered[:candidate_limit]]
+
+        detail_stmt = (
+            select(
+                BaseProduct.random_key.label("base_random_key"),
+                BaseProduct.persian_name.label("persian_name"),
+                BaseProduct.english_name.label("english_name"),
+                Category.title.label("category_title"),
+                Brand.title.label("brand_title"),
+                BaseProduct.extra_features.label("extra_features"),
+            )
+            .join(Category, Category.id == BaseProduct.category_id)
+            .outerjoin(Brand, Brand.id == BaseProduct.brand_id)
+            .where(BaseProduct.random_key.in_(base_keys))
+        )
+
+        detail_result = await session.execute(detail_stmt)
+
+    detail_map: dict[str, dict[str, object]] = {}
+    for row in detail_result:
+        mapping = row._mapping
+        key = str(mapping["base_random_key"])
+        detail_map[key] = {
+            "persian_name": mapping["persian_name"],
+            "english_name": mapping["english_name"],
+            "category_title": mapping["category_title"],
+            "brand_title": mapping["brand_title"],
+            "extra_features": mapping["extra_features"],
+        }
+
+    candidates: List[ProductCandidateWithFeatures] = []
+
+    for match in ordered[:candidate_limit]:
+        details = detail_map.get(match.random_key, {})
+        raw_features = details.get("extra_features") if details else None
+        flattened = _flatten_features(
+            raw_features if isinstance(raw_features, dict) else {}
+        )
+
+        features: List[ProductFeature] = []
+        feature_names: List[str] = []
+        seen_feature_names: set[str] = set()
+        for name, value in flattened:
+            clean_name = name.strip()
+            if not clean_name or clean_name in seen_feature_names:
+                continue
+            seen_feature_names.add(clean_name)
+            features.append(ProductFeature(name=clean_name, value=value))
+            feature_names.append(clean_name)
+            if len(features) >= feature_cap:
+                break
+
+        candidates.append(
+            ProductCandidateWithFeatures(
+                base_random_key=match.random_key,
+                persian_name=(
+                    details.get("persian_name")
+                    if isinstance(details.get("persian_name"), str)
+                    else match.persian_name
+                ),
+                english_name=(
+                    details.get("english_name")
+                    if isinstance(details.get("english_name"), str)
+                    else match.english_name
+                ),
+                category_title=(
+                    details.get("category_title")
+                    if isinstance(details.get("category_title"), str)
+                    else None
+                ),
+                brand_title=(
+                    details.get("brand_title")
+                    if isinstance(details.get("brand_title"), str)
+                    else None
+                ),
+                similarity=match.similarity,
+                features=features,
+                available_features=feature_names,
+            )
+        )
+
+    return ProductSearchWithFeaturesResult(
+        query=normalized, candidates=candidates
+    )
+
+
 async def _fetch_feature_details(
     ctx: RunContext[AgentDependencies],
     base_random_key: str,
@@ -189,6 +323,75 @@ async def _fetch_feature_details(
         base_random_key=canonical_key,
         features=features,
         available_features=[feature.name for feature in features],
+    )
+
+
+async def _feature_list_for_bases(
+    ctx: RunContext[AgentDependencies],
+    base_random_keys: Sequence[str],
+    feature_limit: int = 100,
+) -> FeatureUnionResult:
+    """Return the union of feature names present on the given base products."""
+
+    unique_keys: List[str] = []
+    seen: set[str] = set()
+    for raw_key in base_random_keys:
+        if not raw_key:
+            continue
+        trimmed = raw_key.strip()
+        if not trimmed or trimmed in seen:
+            continue
+        seen.add(trimmed)
+        unique_keys.append(trimmed)
+
+    if not unique_keys:
+        return FeatureUnionResult(
+            requested_base_random_keys=[], feature_names=[]
+        )
+
+    try:
+        feature_cap = max(1, min(int(feature_limit), 200))
+    except (TypeError, ValueError):  # pragma: no cover - defensive parsing
+        feature_cap = 100
+
+    async with ctx.deps.session_factory() as session:
+        stmt = select(
+            BaseProduct.random_key,
+            BaseProduct.extra_features,
+        ).where(BaseProduct.random_key.in_(unique_keys))
+        result = await session.execute(stmt)
+
+    features_by_key: dict[str, List[str]] = {key: [] for key in unique_keys}
+    for base_key, extra_features in result:
+        flattened = _flatten_features(
+            extra_features if isinstance(extra_features, dict) else {}
+        )
+        names: List[str] = []
+        seen_names: set[str] = set()
+        for name, _ in flattened:
+            clean_name = name.strip()
+            if not clean_name or clean_name in seen_names:
+                continue
+            seen_names.add(clean_name)
+            names.append(clean_name)
+        features_by_key[str(base_key)] = names
+
+    union: List[str] = []
+    seen_union: set[str] = set()
+    for key in unique_keys:
+        for name in features_by_key.get(key, []):
+            if name in seen_union:
+                continue
+            seen_union.add(name)
+            union.append(name)
+            if len(union) >= feature_cap:
+                break
+        if len(union) >= feature_cap:
+            break
+
+    return FeatureUnionResult(
+        requested_base_random_keys=unique_keys,
+        feature_names=union,
     )
 
 
@@ -534,6 +737,31 @@ async def _summarize_candidate_offers(
     )
 
 
+PRODUCT_SEARCH_WITH_FEATURES_TOOL = Tool(
+    _search_bases_with_features,
+    name="search_bases_with_features",
+    description=(
+        "Use this tool when you need the most likely base products and their distinguishing catalogue features. "
+        "Compose a concise Persian search query from the user's latest wording and any clarified attributes, "
+        "then provide it once per turn. The response returns up to ten candidates with base_random_keys, names, "
+        "category/brand context, similarity scores, and representative feature/value pairs so you can present "
+        "the options back to the customer and ask which fits best. Only rerun the tool after the user supplies "
+        "new evidence—never repeat an identical query."
+    ),
+)
+
+
+FEATURE_LIST_FOR_BASES_TOOL = Tool(
+    _feature_list_for_bases,
+    name="list_features_for_bases",
+    description=(
+        "After you have a shortlist of base_random_keys, call this tool to gather the union of feature names across them. "
+        "Pass the keys in your preferred order (up to ten) and use the returned feature list to craft the next clarifying "
+        "question. If the tool returns an empty list, ask the user for any additional product details before searching again."
+    ),
+)
+
+
 PRODUCT_SEARCH_TOOL = Tool(
     _search_base_products,
     name="search_base_products",
@@ -596,6 +824,8 @@ SELLER_CANDIDATE_SUMMARY_TOOL = Tool(
 
 
 __all__ = [
+    "PRODUCT_SEARCH_WITH_FEATURES_TOOL",
+    "FEATURE_LIST_FOR_BASES_TOOL",
     "PRODUCT_SEARCH_TOOL",
     "FEATURE_LOOKUP_TOOL",
     "SELLER_STATISTICS_TOOL",

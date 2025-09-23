@@ -18,11 +18,10 @@ from ..dependencies import AgentDependencies
 from ..logging import _ensure_logfire
 from ..schemas import AgentReply
 from ..tools import (
-    FEATURE_LOOKUP_TOOL,
-    PRODUCT_SEARCH_TOOL,
+    FEATURE_LIST_FOR_BASES_TOOL,
+    PRODUCT_SEARCH_WITH_FEATURES_TOOL,
     SELLER_CANDIDATE_SUMMARY_TOOL,
     SELLER_OFFERS_TOOL,
-    SELLER_STATISTICS_TOOL,
 )
 from .prompts import MULTI_TURN_SYSTEM_PROMPT
 
@@ -55,10 +54,9 @@ def _build_multi_turn_agent() -> Agent[AgentDependencies, AgentReply]:
         instructions=MULTI_TURN_SYSTEM_PROMPT,
         deps_type=AgentDependencies,
         tools=[
-            PRODUCT_SEARCH_TOOL,
-            FEATURE_LOOKUP_TOOL,
+            PRODUCT_SEARCH_WITH_FEATURES_TOOL,
+            FEATURE_LIST_FOR_BASES_TOOL,
             SELLER_CANDIDATE_SUMMARY_TOOL,
-            SELLER_STATISTICS_TOOL,
             SELLER_OFFERS_TOOL,
         ],
         instrument=InstrumentationSettings(),

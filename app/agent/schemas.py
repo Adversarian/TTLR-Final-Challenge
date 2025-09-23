@@ -54,6 +54,58 @@ class FeatureLookupResult(BaseModel):
     )
 
 
+class ProductCandidateWithFeatures(BaseModel):
+    """Represents a product match enriched with catalogue feature details."""
+
+    base_random_key: str = Field(..., description="Candidate base product key.")
+    persian_name: str = Field(
+        ..., description="Canonical Persian name associated with the base product."
+    )
+    english_name: str | None = Field(
+        None, description="English display name when available."
+    )
+    category_title: str | None = Field(
+        None, description="Category title the product belongs to if known."
+    )
+    brand_title: str | None = Field(
+        None, description="Brand title associated with the product when present."
+    )
+    similarity: float = Field(
+        ..., ge=0.0, le=1.0, description="Similarity score relative to the search query."
+    )
+    features: List[ProductFeature] = Field(
+        default_factory=list,
+        description="Flattened feature/value pairs sourced from the catalogue record.",
+    )
+    available_features: List[str] = Field(
+        default_factory=list,
+        description="Convenience list of feature names present on the product.",
+    )
+
+
+class ProductSearchWithFeaturesResult(BaseModel):
+    """Collection of ranked product matches including feature highlights."""
+
+    query: str = Field(..., description="Normalized query string that was searched.")
+    candidates: List[ProductCandidateWithFeatures] = Field(
+        default_factory=list,
+        description="Top catalogue matches enriched with catalogue feature details.",
+    )
+
+
+class FeatureUnionResult(BaseModel):
+    """Union of available feature names for a shortlist of base products."""
+
+    requested_base_random_keys: List[str] = Field(
+        default_factory=list,
+        description="Base product keys that were inspected when collecting features.",
+    )
+    feature_names: List[str] = Field(
+        default_factory=list,
+        description="Unique feature names observed across the requested base products.",
+    )
+
+
 class CitySellerStatistics(BaseModel):
     """Aggregated seller metrics for a specific city."""
 
@@ -267,6 +319,9 @@ __all__ = [
     "ProductSearchResult",
     "ProductFeature",
     "FeatureLookupResult",
+    "ProductCandidateWithFeatures",
+    "ProductSearchWithFeaturesResult",
+    "FeatureUnionResult",
     "CitySellerStatistics",
     "SellerStatistics",
     "SellerOffer",

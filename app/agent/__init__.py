@@ -18,7 +18,9 @@ from .schemas import (
 )
 from .tools import (
     FEATURE_LOOKUP_TOOL,
+    FEATURE_LIST_FOR_BASES_TOOL,
     PRODUCT_SEARCH_TOOL,
+    PRODUCT_SEARCH_WITH_FEATURES_TOOL,
     SELLER_CANDIDATE_SUMMARY_TOOL,
     SELLER_OFFERS_TOOL,
     SELLER_STATISTICS_TOOL,
@@ -31,9 +33,11 @@ __all__ = [
     "AgentReply",
     "CitySellerStatistics",
     "FeatureLookupResult",
+    "FEATURE_LIST_FOR_BASES_TOOL",
     "ProductFeature",
     "ProductMatch",
     "ProductSearchResult",
+    "PRODUCT_SEARCH_WITH_FEATURES_TOOL",
     "SellerCandidateSummary",
     "SellerCandidateSummaryList",
     "SellerStatistics",

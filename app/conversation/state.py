@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import List, Literal
+from typing import List, Literal, Sequence
 
 from cachetools import TTLCache
 
@@ -92,14 +92,18 @@ class ConversationStore:
             self._state[chat_id] = state
             return list(state.model_messages)
 
-    async def replace_model_history(
-        self, chat_id: str, model_messages: List[ModelMessage]
+    async def extend_model_history(
+        self, chat_id: str, model_messages: Sequence[ModelMessage]
     ) -> None:
-        """Replace the stored model messages for a chat with a new snapshot."""
+        """Append newly observed model messages to the stored history."""
+
+        pending = list(model_messages)
+        if not pending:
+            return
 
         async with self._lock:
             state = self._state.get(chat_id) or _ConversationState()
-            state.model_messages = list(model_messages)
+            state.model_messages.extend(pending)
             self._state[chat_id] = state
 
     async def reset(self, chat_id: str) -> None:

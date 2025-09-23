@@ -288,7 +288,7 @@ async def chat_endpoint(
             existing_history = await conversation_store.get_model_history(
                 request.chat_id
             )
-            history_payload = list(existing_history) if existing_history else None
+            history_payload = existing_history or None
 
             multi_agent = get_multi_turn_agent()
             try:
@@ -307,7 +307,11 @@ async def chat_endpoint(
                     status_code=500, detail="Multi-turn agent execution failed."
                 ) from exc
 
-            conversation_history = list(result.all_messages())
+            new_model_messages: list[Any] = []
+            new_messages_getter = getattr(result, "new_messages", None)
+            if callable(new_messages_getter):
+                new_model_messages = list(new_messages_getter())
+
             reply = result.output.clipped()
             response, final_message = _response_from_agent_reply(reply)
 
@@ -321,9 +325,10 @@ async def chat_endpoint(
                 ),
             )
 
-            await conversation_store.replace_model_history(
-                request.chat_id, conversation_history
-            )
+            if new_model_messages:
+                await conversation_store.extend_model_history(
+                    request.chat_id, new_model_messages
+                )
 
             if reply.member_random_keys:
                 await conversation_store.reset(request.chat_id)
