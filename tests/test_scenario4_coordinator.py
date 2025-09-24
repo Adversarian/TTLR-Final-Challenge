@@ -132,6 +132,63 @@ async def test_force_final_failure_returns_message(monkeypatch: pytest.MonkeyPat
     assert state.turn_count == state.max_turns
 
 
+async def test_finaliser_completes_and_resets_store(monkeypatch: pytest.MonkeyPatch) -> None:
+    coordinator = Scenario4Coordinator()
+    state = await coordinator._store.get("finalised")  # type: ignore[attr-defined]
+    state.turn_count = 3
+    state.locked_base_key = "base-42"
+
+    offer = MemberOffer(
+        member_random_key="member-42",
+        shop_id=303,
+        price=4100000,
+        has_warranty=False,
+        shop_score=Decimal("4.3"),
+        city_name="تهران",
+        matched_constraints=["ارزان‌ترین گزینه در دسترس"],
+        match_score=0.9,
+    )
+
+    extraction = ConstraintExtraction(summary="everything collected")
+    plan = ClarificationPlan(action="finalize", question=None, rationale="ready to conclude")
+    member_response = MemberFilterResponse(offers=[offer])
+    final_summary = ResolutionSummary(
+        message="member confirmed",
+        member_random_key="member-42",
+    )
+
+    async def _fake_run_agent(self, *, agent_key, **kwargs):
+        if agent_key == "constraint_extractor":
+            return extraction
+        if agent_key == "clarification":
+            return plan
+        if agent_key == "member_resolver":
+            return member_response
+        if agent_key == "finaliser":
+            return final_summary
+        raise AssertionError(f"Unexpected agent key: {agent_key}")
+
+    monkeypatch.setattr(Scenario4Coordinator, "_run_agent", _fake_run_agent)
+
+    deps = AgentDependencies(session=_StubSession(), session_factory=_StubSessionFactory())
+    reply = await coordinator.handle_turn(
+        chat_id="finalised",
+        user_message="می‌خواهم همین گزینه را بگیرم",
+        deps=deps,
+        usage_limits=None,
+    )
+
+    assert reply.member_random_keys == ["member-42"]
+    assert state.completed is True
+
+    fresh_state = await coordinator._store.get("finalised")  # type: ignore[attr-defined]
+    assert fresh_state is not state
+    assert fresh_state.turn_count == 0
+    assert fresh_state.completed is False
+    assert fresh_state.locked_base_key is None
+    assert fresh_state.agent_histories == {}
+
+
 def test_fallback_question_ignores_dismissed_aspects() -> None:
     coordinator = Scenario4Coordinator()
     state = Scenario4ConversationState(chat_id="dismissed")
@@ -148,15 +205,17 @@ def test_fallback_question_ignores_dismissed_aspects() -> None:
 
 
 class _DummyResult:
-    def __init__(self, output, messages):
+    def __init__(self, output, messages, previous_history):
         self.output = output
-        self._messages = messages
+        self._messages = list(messages)
+        self._previous_history = list(previous_history)
 
     def all_messages(self, *, output_tool_return_content=None):
         return list(self._messages)
 
-    def new_messages(self, *, output_tool_return_content=None):  # pragma: no cover - legacy compatibility
-        return [self._messages[-1]] if self._messages else []
+    def new_messages(self, *, output_tool_return_content=None):
+        start_index = len(self._previous_history)
+        return list(self._messages[start_index:])
 
 
 class _DummyAgent:
@@ -171,7 +230,8 @@ class _DummyAgent:
             raise AssertionError("Too many agent invocations")
         output, messages = self._transcripts[self.calls]
         self.calls += 1
-        return _DummyResult(output, messages)
+        previous_history = list(message_history) if message_history else []
+        return _DummyResult(output, messages, previous_history)
 
 
 async def test_run_agent_persists_full_history() -> None:

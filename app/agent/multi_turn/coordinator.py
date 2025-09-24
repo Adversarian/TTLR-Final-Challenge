@@ -562,14 +562,22 @@ class Scenario4Coordinator:
         """Execute an agent while preserving its conversation history."""
 
         agent = agent_factory()
-        history = state.agent_histories.get(agent_key)
+        existing_history = state.agent_histories.get(agent_key)
+        message_history = list(existing_history) if existing_history else None
         result = await agent.run(
             user_prompt=prompt,
             deps=deps,
-            message_history=list(history) if history else None,
+            message_history=message_history,
             usage_limits=usage_limits,
         )
-        state.agent_histories[agent_key] = list(result.all_messages())
+        new_messages = list(result.new_messages())
+        if existing_history:
+            updated_history = list(existing_history)
+            if new_messages:
+                updated_history.extend(new_messages)
+        else:
+            updated_history = new_messages or list(result.all_messages())
+        state.agent_histories[agent_key] = updated_history
         return result.output
 
     def _build_extraction_prompt(
