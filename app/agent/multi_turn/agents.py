@@ -104,8 +104,9 @@ fabricate member keys or repeat the tool call with the same arguments.
 FINALISER_PROMPT = """
 Provide the final recommendation once a single member offer is chosen. Mention
 the decisive factors (price, warranty, score, feature alignment) in one or two
-sentences and return the member_random_key exactly once. No extra keys or
-follow-up questions are allowed.
+sentences and return the member_random_key exactly once. Copy the identifier
+from the payload without modifying it. No extra keys or follow-up questions are
+allowed.
 """.strip()
 
 

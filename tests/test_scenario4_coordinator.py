@@ -65,7 +65,7 @@ async def test_forces_final_member_on_last_turn(monkeypatch: pytest.MonkeyPatch)
     extraction = ConstraintExtraction(summary="needs a kettle")
     plan = ClarificationPlan(action="ask_question", question="برند خاصی مد نظر دارید؟", rationale="turn budget exhausted")
     member_response = MemberFilterResponse(offers=[offer])
-    final_summary = ResolutionSummary(message="member selected", member_random_key="member-1")
+    final_summary = ResolutionSummary(message="member selected", member_random_key="bogus-key")
 
     async def _fake_run_agent(self, *, agent_key, **kwargs):
         if agent_key == "constraint_extractor":

@@ -256,7 +256,7 @@ async def _category_feature_statistics(
     category_hint: str | None = None,
     base_random_keys: list[str] | None = None,
     sample_limit: int = 250,
-    limit: int = 20,
+    limit: int = 10,
 ) -> list[CategoryFeatureStatistic]:
     """Return a summary of common features for the requested scope."""
 
@@ -314,7 +314,7 @@ async def _filter_base_products_by_constraints(
     required_features: list[FeatureConstraintModel] | None = None,
     optional_features: list[FeatureConstraintModel] | None = None,
     excluded_features: list[FeatureConstraintModel] | None = None,
-    limit: int = 20,
+    limit: int = 10,
 ) -> ProductFilterResponse:
     """Search base products using structured preferences."""
 
@@ -571,7 +571,7 @@ CATEGORY_FEATURE_STATISTICS_TOOL = Tool(
     description=(
         "Analyse a category or list of base products to understand which extra features "
         "appear most often. Provide either `category_hint` or `base_random_keys` and the tool "
-        "returns up to twenty feature paths with representative values so you can craft "
+        "returns up to ten feature paths with representative values so you can craft "
         "targeted clarification questions."
     ),
 )
@@ -582,8 +582,9 @@ FILTER_BASE_PRODUCTS_TOOL = Tool(
     name="filter_base_products_by_constraints",
     description=(
         "Filter catalogue base products using structured criteria such as category hints, "
-        "brand preferences, price ranges, and feature requirements. The tool returns the "
-        "strongest matches alongside evidence of which constraints they satisfied."
+        "brand preferences, price ranges, and feature requirements. The tool returns up "
+        "to ten of the strongest matches alongside evidence of which constraints they "
+        "satisfied."
     ),
 )
 
@@ -594,8 +595,8 @@ FILTER_MEMBERS_TOOL = Tool(
     description=(
         "Given a resolved base product, retrieve shop-specific offers and rank them by how "
         "well they satisfy price, warranty, score, or city requirements. The response "
-        "includes matched constraint notes and a `match_score` so you can pick the best "
-        "member even when no offer satisfies every filter."
+        "includes matched constraint notes and a `match_score` for up to ten offers so "
+        "you can pick the best member even when no offer satisfies every filter."
     ),
 )
 

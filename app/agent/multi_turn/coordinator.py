@@ -316,12 +316,13 @@ class Scenario4Coordinator:
             usage_limits=usage_limits,
             prompt=self._build_final_prompt(state),
         )
+        final_key = state.finalized_member_key
         state.completed = True
         await self._store.complete(state.chat_id)
         state.next_turn()
         return AgentReply(
             message=final_message.message,
-            member_random_keys=[final_message.member_random_key],
+            member_random_keys=[final_key] if final_key else [],
         )
 
     async def _fallback_member_offer(
