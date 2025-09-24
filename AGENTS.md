@@ -15,6 +15,16 @@
 - Image traffic is routed to a dedicated vision agent that consumes the uploaded BinaryContent directly and answers with a few Persian words describing the dominant object, without invoking catalogue tools.
 - The `/chat` endpoint treats the incoming `messages` array as the modalities of a single user turn; the presence of any `image` part triggers the vision agent even if the final element is textual.
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
+- After handing off any image-only requests, a lightweight router powered by `OPENAI_ROUTER_MODEL` classifies the remaining text into `single_turn` (direct answers) versus `multi_turn` (needs discovery). Single-turn traffic still goes to the legacy agent, while multi-turn traffic now flows through the dedicated scenario-4 manager.
+- When the router labels a request as `multi_turn`, control moves to the scenario-4 manager which keeps per-chat memory (filters, asked questions, message history) and orchestrates clarifying turns with a five-response budget.
+
+## Scenario 4 multi-turn workflow
+- `MultiTurnManager` caches a `MultiTurnSession` per `chat_id`. Each session tracks processed user messages, filter state, asked/pending questions, previously shown candidates, and persists the constraint extractor's `message_history` via `AgentRunResult.all_messages()`.
+- A lightweight extraction agent (`member-constraint-extractor`) converts every new user message into a `ConstraintUpdate` JSON payload. It appends `text_queries`, recognises explicit refusals via `excluded_fields`, and captures shop selections (shop IDs or member keys). The agent runs with `OPENAI_MODEL` at temperature 0 and keeps message payloads compact by serialising the state summary.
+- `search_members` executes a single SQL query per turn, joining members, shops, cities, and base products. Textual hints drive a trigram-based similarity score while structured preferences (city, warranty, price range, score thresholds, preferred shops) apply as hard filters. The weighted CTE score blends text relevance, seller warranty, and shop score; candidates are capped to ten and sorted by total score. If tri-gram lookups over `extra_features` become slow we may need to add a dedicated GIN index.
+- Question planning starts broad (`broad_intro`) to capture category, price, city, and warranty in one go, then targets the attribute with the highest variation across remaining candidates (city, warranty, price, brand, score, feature hints) while respecting the `excluded_fields` list. When ≤5 candidates remain and haven't been presented before, the manager lists them as `نام محصول — فروشگاه {shop_id}` so the user can pick directly.
+- The workflow enforces the 5-turn ceiling: after four assistant replies the manager will pick the highest-scoring candidate, acknowledge the fallback, and return its `member_random_key`. Earlier completion happens whenever the search narrows to a single candidate or the user chooses a presented option.
+- Sessions increment their `turns_taken` counter on every assistant message and reuse the constraint agent's message history to stay consistent across HTTP calls. Once a member key is delivered the session holds the result in case the judge resends the prior conversation.
 
 ## Database indexes
 - `base_products`
@@ -37,3 +47,4 @@
 - Update this file whenever project rules or capabilities change so future tasks inherit accurate guidance.
 - Keep tool descriptions aligned with their real capabilities (search terms can include distinctive attributes; seller statistics accepts only the base random key with an optional city filter and returns the full aggregate payload).
 - Enclose every `agent.run` invocation in the shared `_run_agent_with_retry` helper so retries remain consistent across the API.
+- Populate `.env.template` whenever a new environment variable (such as `OPENAI_ROUTER_MODEL`) is introduced so deployments remain reproducible.

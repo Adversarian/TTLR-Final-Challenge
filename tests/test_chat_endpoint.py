@@ -18,6 +18,8 @@ os.environ.setdefault("POSTGRES_DB", "torob")
 import app.main as app_main
 import app.logging_utils.judge_requests as request_logging
 from app.agent import AgentReply
+from app.agent.router import RouterDecision
+from app.agent.multi_turn import MultiTurnReply
 from app.main import app
 from app.db import get_session
 
@@ -184,6 +186,48 @@ def test_invalid_image_payload_returns_400(monkeypatch: pytest.MonkeyPatch) -> N
     ) or response.json()["detail"].startswith("Malformed")
 
 
+def test_multi_turn_router_invokes_manager(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Requests flagged as multi-turn must route to the dedicated manager."""
+
+    app.dependency_overrides[get_session] = _session_override
+    reply = MultiTurnReply(message="در حال بررسی هستم", member_random_keys=["member-1"])
+    manager = _StubMultiTurnManager(reply)
+
+    monkeypatch.setattr(app_main, "get_multi_turn_manager", lambda: manager)
+    monkeypatch.setattr(
+        app_main,
+        "get_router",
+        lambda: _RouterStub(RouterDecision(route="multi_turn")),
+    )
+
+    def _failing_agent():  # pragma: no cover - should not execute in this path
+        raise AssertionError("Single-turn agent should not run when multi-turn is selected")
+
+    monkeypatch.setattr(app_main, "get_agent", _failing_agent)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/chat",
+            json={
+                "chat_id": "multi-turn",
+                "messages": [
+                    {"type": "text", "content": "سلام"},
+                ],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "message": "در حال بررسی هستم",
+        "base_random_keys": None,
+        "member_random_keys": ["member-1"],
+    }
+    assert manager.calls == [("multi-turn", ["سلام"])]
+
+
 class _StubAgent:
     """Simple async agent stub returning a prebuilt reply."""
 
@@ -192,6 +236,28 @@ class _StubAgent:
 
     async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
         return SimpleNamespace(output=self._reply)
+
+
+class _RouterStub:
+    """Stub router returning a predetermined decision."""
+
+    def __init__(self, decision: RouterDecision) -> None:
+        self._decision = decision
+
+    async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
+        return SimpleNamespace(output=self._decision)
+
+
+class _StubMultiTurnManager:
+    """Stub manager that records calls and returns a canned reply."""
+
+    def __init__(self, reply: MultiTurnReply) -> None:
+        self.reply = reply
+        self.calls: list[tuple[str, list[str]]] = []
+
+    async def handle(self, chat_id: str, deps, text_segments: list[str]):
+        self.calls.append((chat_id, text_segments))
+        return self.reply
 
 
 class _RecorderLogger:

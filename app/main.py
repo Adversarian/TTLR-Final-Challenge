@@ -17,7 +17,8 @@ from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .agent import AgentDependencies, get_agent
+from .agent import AgentDependencies, get_agent, get_router
+from .agent.multi_turn import get_multi_turn_manager
 from .agent.image import get_image_agent
 from .db import AsyncSessionLocal, get_session
 from .logging_utils.judge_requests import request_logger
@@ -220,8 +221,34 @@ async def chat_endpoint(
                 ChatResponse(message="No textual message found in the request.")
             )
 
-        agent = get_agent()
         deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
+
+        router_route = "single_turn"
+        try:
+            router_result = await _run_agent_with_retry(
+                get_router(),
+                user_prompt=aggregated_prompt,
+                usage_limits=UsageLimits(request_limit=1, tool_calls_limit=0),
+            )
+            router_route = router_result.output.route
+        except Exception:  # pragma: no cover - router must never break the flow
+            logger.exception("Router failed; defaulting to single-turn handler")
+
+        if router_route == "multi_turn":
+            manager = get_multi_turn_manager()
+            multi_turn_reply = await manager.handle(
+                chat_id=request.chat_id,
+                deps=deps,
+                text_segments=text_segments,
+            )
+            return await _finalize(
+                ChatResponse(
+                    message=multi_turn_reply.message,
+                    member_random_keys=multi_turn_reply.member_random_keys,
+                )
+            )
+
+        agent = get_agent()
 
         try:
             result = await _run_agent_with_retry(
