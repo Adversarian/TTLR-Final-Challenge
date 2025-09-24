@@ -5,12 +5,13 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 
-from pydantic_ai import Agent
+from pydantic_ai import Agent, InstrumentationSettings
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.settings import ModelSettings
 
 from ..dependencies import AgentDependencies
+from ..logging import _ensure_logfire
 from ..tools import PRODUCT_SEARCH_TOOL
 from .schemas import (
     CandidatePresentation,
@@ -30,6 +31,7 @@ from .tools import (
 def _build_model(temperature: float = 0.0, *, parallel_tools: bool = False) -> OpenAIChatModel:
     """Construct a chat model configured for the multi-turn agents."""
 
+    _ensure_logfire()
     model_name = os.getenv(
         "OPENAI_MULTI_TURN_MODEL", os.getenv("OPENAI_MODEL", "gpt-4o-mini")
     )
@@ -106,6 +108,7 @@ def get_constraint_extractor_agent() -> Agent[AgentDependencies, ConstraintExtra
         output_type=ConstraintExtraction,
         instructions=CONSTRAINT_EXTRACTOR_PROMPT,
         deps_type=AgentDependencies,
+        instrument=InstrumentationSettings(),
         name="scenario4-constraint-extractor",
     )
 
@@ -119,6 +122,7 @@ def get_clarification_agent() -> Agent[AgentDependencies, ClarificationPlan]:
         output_type=ClarificationPlan,
         instructions=CLARIFICATION_PROMPT,
         deps_type=AgentDependencies,
+        instrument=InstrumentationSettings(),
         name="scenario4-clarification-planner",
     )
 
@@ -133,6 +137,7 @@ def get_search_agent() -> Agent[AgentDependencies, ProductFilterResponse]:
         instructions=SEARCH_PROMPT,
         deps_type=AgentDependencies,
         tools=[PRODUCT_SEARCH_TOOL, CATEGORY_FEATURE_STATISTICS_TOOL, FILTER_BASE_PRODUCTS_TOOL],
+        instrument=InstrumentationSettings(),
         name="scenario4-catalogue-searcher",
     )
 
@@ -146,6 +151,7 @@ def get_candidate_reducer_agent() -> Agent[AgentDependencies, CandidatePresentat
         output_type=CandidatePresentation,
         instructions=CANDIDATE_REDUCER_PROMPT,
         deps_type=AgentDependencies,
+        instrument=InstrumentationSettings(),
         name="scenario4-candidate-reducer",
     )
 
@@ -160,6 +166,7 @@ def get_member_resolver_agent() -> Agent[AgentDependencies, MemberFilterResponse
         instructions=MEMBER_RESOLVER_PROMPT,
         deps_type=AgentDependencies,
         tools=[FILTER_MEMBERS_TOOL],
+        instrument=InstrumentationSettings(),
         name="scenario4-member-resolver",
     )
 
@@ -173,6 +180,7 @@ def get_finaliser_agent() -> Agent[AgentDependencies, ResolutionSummary]:
         output_type=ResolutionSummary,
         instructions=FINALISER_PROMPT,
         deps_type=AgentDependencies,
+        instrument=InstrumentationSettings(),
         name="scenario4-finaliser",
     )
 

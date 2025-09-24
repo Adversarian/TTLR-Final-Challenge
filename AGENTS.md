@@ -17,6 +17,7 @@
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
 - Scenario 4 (multi-turn) requests are now delegated to `Scenario4Coordinator`, which manages constraint extraction, clarification planning, catalogue filtering, member resolution, and finalisation through a graph of specialised Pydantic-AI agents. The coordinator persists conversation state per `chat_id`, enforces the five-turn limit, and always returns exactly one member key by the final turn.
 - Multi-turn tools include `category_feature_statistics`, `filter_base_products_by_constraints`, and `filter_members_by_constraints`, covering feature discovery, catalogue narrowing, and seller resolution so the coordinator can converge on a single member within the turn budget.
+- The dedicated scenario 4 agents are configured with Logfire instrumentation (via `_ensure_logfire` and `InstrumentationSettings`) so their traces match the single-turn and vision agents.
 
 ## Database indexes
 - `base_products`

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Dict, Iterable, List, Tuple
 
 from pydantic_ai.messages import ModelMessage
@@ -167,9 +167,9 @@ class ConstraintState:
             "min_shop_score": self.min_shop_score,
             "city_preferences": sorted(self.city_preferences),
             "keywords": sorted(self.keywords),
-            "required_features": [feature.__dict__ for feature in self.required_features.values()],
-            "optional_features": [feature.__dict__ for feature in self.optional_features.values()],
-            "excluded_features": [feature.__dict__ for feature in self.excluded_features.values()],
+            "required_features": [asdict(feature) for feature in self.required_features.values()],
+            "optional_features": [asdict(feature) for feature in self.optional_features.values()],
+            "excluded_features": [asdict(feature) for feature in self.excluded_features.values()],
             "summaries": list(self.summaries[-3:]),
         }
 
