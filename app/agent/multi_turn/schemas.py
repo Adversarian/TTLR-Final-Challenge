@@ -77,6 +77,13 @@ class ConstraintExtraction(BaseModel):
         default_factory=list,
         description="Other salient descriptors or synonyms worth injecting into search.",
     )
+    dismissed_aspects: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Canonical names of shopping dimensions the user explicitly marked as"
+            " irrelevant (e.g., brand, warranty, shop_score, city, price, features)."
+        ),
+    )
 
 
 class ClarificationPlan(BaseModel):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Set, Tuple
 
 from pydantic_ai.messages import ModelMessage
 
@@ -23,6 +23,32 @@ def _normalise_text(value: str) -> str:
     for src, dest in replacements.items():
         lowered = lowered.replace(src, dest)
     return lowered
+
+
+_ASPECT_ALIASES = {
+    "brand": "brand",
+    "brands": "brand",
+    "وارد": "brand",
+    "warranty": "warranty",
+    "گارانتی": "warranty",
+    "shop_score": "shop_score",
+    "rating": "shop_score",
+    "city": "city",
+    "price": "price",
+    "budget": "price",
+    "features": "features",
+}
+
+
+def _normalise_aspect(aspect: str) -> str | None:
+    """Convert free-form aspect labels into canonical dismissal tokens."""
+
+    token = aspect.strip().lower()
+    if not token:
+        return None
+    if token in _ASPECT_ALIASES:
+        return _ASPECT_ALIASES[token]
+    return token if token in _ASPECT_ALIASES.values() else None
 
 
 @dataclass(slots=True)
@@ -87,6 +113,7 @@ class ConstraintState:
     required_features: _FeatureBucket = field(default_factory=_FeatureBucket)
     optional_features: _FeatureBucket = field(default_factory=_FeatureBucket)
     excluded_features: _FeatureBucket = field(default_factory=_FeatureBucket)
+    dismissed_aspects: Set[str] = field(default_factory=set)
 
     def apply_update(self, extraction: ConstraintExtraction) -> None:
         """Merge a new extraction result into the running state."""
@@ -154,6 +181,33 @@ class ConstraintState:
         self.excluded_features.extend(
             _convert_features(extraction.excluded_features)
         )
+        self._apply_dismissals(extraction.dismissed_aspects)
+
+    def _apply_dismissals(self, aspects: Iterable[str]) -> None:
+        """Persist the user's explicit indifference statements."""
+
+        for aspect in aspects:
+            token = _normalise_aspect(aspect)
+            if not token:
+                continue
+            self.dismissed_aspects.add(token)
+            if token == "brand":
+                self.brand_preferences.clear()
+            elif token == "warranty":
+                self.require_warranty = None
+            elif token == "shop_score":
+                self.min_shop_score = None
+            elif token == "city":
+                self.city_preferences.clear()
+            elif token == "price":
+                self.price_min = None
+                self.price_max = None
+
+    def aspect_dismissed(self, aspect: str) -> bool:
+        """Return whether the caller should avoid asking about the aspect."""
+
+        token = _normalise_aspect(aspect)
+        return bool(token and token in self.dismissed_aspects)
 
     def snapshot(self) -> dict[str, object]:
         """Return a serialisable snapshot for prompt construction."""
@@ -171,6 +225,7 @@ class ConstraintState:
             "optional_features": [asdict(feature) for feature in self.optional_features.values()],
             "excluded_features": [asdict(feature) for feature in self.excluded_features.values()],
             "summaries": list(self.summaries[-3:]),
+            "dismissed_aspects": sorted(self.dismissed_aspects),
         }
 
 
@@ -204,11 +259,13 @@ class Scenario4ConversationState:
     latest_user_message: str | None = None
     agent_histories: Dict[str, List[ModelMessage]] = field(default_factory=dict)
     completed: bool = False
+    unsatisfied_requirements: List[str] = field(default_factory=list)
 
     def next_turn(self) -> None:
         """Increment the assistant turn counter."""
 
-        self.turn_count += 1
+        if self.turn_count < self.max_turns:
+            self.turn_count += 1
 
     def remaining_turns(self) -> int:
         """Return how many assistant responses remain before hitting the cap."""
@@ -223,6 +280,14 @@ class Scenario4ConversationState:
         self.locked_base_key = None
         self.finalized_member_key = None
         self.completed = False
+        self.unsatisfied_requirements.clear()
+
+    def record_unsatisfied(self, note: str) -> None:
+        """Track requirements we could not fully honour for final messaging."""
+
+        trimmed = note.strip()
+        if trimmed and trimmed not in self.unsatisfied_requirements:
+            self.unsatisfied_requirements.append(trimmed)
 
 
 __all__ = [

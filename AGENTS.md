@@ -16,6 +16,8 @@
 - The `/chat` endpoint treats the incoming `messages` array as the modalities of a single user turn; the presence of any `image` part triggers the vision agent even if the final element is textual.
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
 - Scenario 4 (multi-turn) requests are now delegated to `Scenario4Coordinator`, which manages constraint extraction, clarification planning, catalogue filtering, member resolution, and finalisation through a graph of specialised Pydantic-AI agents. The coordinator persists conversation state per `chat_id`, enforces the five-turn limit, and always returns exactly one member key by the final turn.
+- Constraint extraction records a `dismissed_aspects` list (brand, warranty, shop_score, city, price, features) whenever the customer says a topic does not matter so clarification and fallback prompts avoid repeating the same questions.
+- Forced finalisation on the fifth turn now relaxes only the dimensions the user marked as optional, falls back to deterministic SQL lookups when the resolver agent cannot find a shop, and records any unmet expectations so the final message can acknowledge them.
 - Multi-turn tools include `category_feature_statistics`, `filter_base_products_by_constraints`, and `filter_members_by_constraints`, covering feature discovery, catalogue narrowing, and seller resolution so the coordinator can converge on a single member within the turn budget.
 - The dedicated scenario 4 agents are configured with Logfire instrumentation (via `_ensure_logfire` and `InstrumentationSettings`) so their traces match the single-turn and vision agents.
 

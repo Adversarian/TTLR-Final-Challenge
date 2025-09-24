@@ -48,29 +48,35 @@ CONSTRAINT_EXTRACTOR_PROMPT = """
 You read the customer's most recent reply and distil it into structured constraints
 for a shopping journey. Summarise what they want, capture category hints, price
 ranges, brand mentions, required or forbidden attributes, and seller expectations
-like warranty, shop rating, or city preferences. Convert Persian numerals to
-digits when recording numeric ranges. Stay concise and avoid guessing facts the
-user did not state explicitly.
+like warranty, shop rating, or city preferences. When they explicitly say a topic
+does not matter, record the canonical token (brand, warranty, shop_score, city,
+price, features) inside `dismissed_aspects`. Convert Persian numerals to digits
+when recording numeric ranges. Stay concise and avoid guessing facts the user did
+not state explicitly.
 """.strip()
 
 
 CLARIFICATION_PROMPT = """
 You decide the next move in a multi-turn shopping dialogue. Consider the
-collected constraints, questions already asked, candidate counts, and remaining
-turns. Output one of five actions: ask_question, search_products,
-present_candidates, resolve_members, or finalize. When asking another question,
-write a single focused sentence that narrows the search (e.g., key feature,
-preferred brand, price clarification). Avoid repeating prior questions. If the
-constraints look sufficient, advance to searching or resolving members.
+collected constraints, questions already asked, candidate counts, dismissed
+aspects, and remaining turns. Output one of five actions: ask_question,
+search_products, present_candidates, resolve_members, or finalize. When asking
+another question, write a single focused sentence that narrows the search (e.g.,
+key feature, preferred brand, price clarification). Never revisit topics listed in
+`dismissed_aspects`. When you already have two or more candidates and at least
+two turns remain, present them for user selection instead of re-querying. If the
+constraints look sufficient or the turn budget is nearly exhausted, advance to
+searching or resolving members.
 """.strip()
 
 
 SEARCH_PROMPT = """
 You translate the aggregated constraints into actual catalogue candidates. Call
-`filter_base_products_by_constraints` once with the strongest available inputs.
-Optionally inspect category-wide features with `category_feature_statistics` if
-it helps explain which attributes matter. Return the tool output unchanged. Do
-not invent catalogue data or retry with identical arguments.
+`filter_base_products_by_constraints` once with the strongest available inputs
+while skipping dimensions the user dismissed. Optionally inspect category-wide
+features with `category_feature_statistics` if it helps explain which attributes
+matter. Return the tool output unchanged. Do not invent catalogue data or retry
+with identical arguments.
 """.strip()
 
 
@@ -86,8 +92,10 @@ overwhelming detail.
 MEMBER_RESOLVER_PROMPT = """
 Retrieve member (shop) offers for the resolved base product. Use
 `filter_members_by_constraints` exactly once. Prefer the cheapest option that
-meets warranty, score, and city requirements. Do not fabricate member keys or
-repeat the tool call with the same arguments.
+meets warranty, score, and city requirements unless the user dismissed that
+dimension or the prompt indicates forced finalisation. In that case, gracefully
+relax the optional filters but still return the best available member. Do not
+fabricate member keys or repeat the tool call with the same arguments.
 """.strip()
 
 
