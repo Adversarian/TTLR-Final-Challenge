@@ -4,6 +4,7 @@ import base64
 import binascii
 import io
 import logging
+import os
 import zipfile
 from decimal import Decimal, InvalidOperation
 from typing import Any, List, Literal, Mapping, Optional, Tuple
@@ -17,7 +18,12 @@ from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .agent import AgentDependencies, get_agent
+from .agent import (
+    AgentDependencies,
+    get_agent,
+    get_multi_turn_manager,
+    get_router,
+)
 from .agent.image import get_image_agent
 from .db import AsyncSessionLocal, get_session
 from .logging_utils.judge_requests import request_logger
@@ -218,6 +224,42 @@ async def chat_endpoint(
         if not aggregated_prompt:
             return await _finalize(
                 ChatResponse(message="No textual message found in the request.")
+            )
+
+        router_route = "single_turn"
+        if os.getenv("OPENAI_API_KEY"):
+            try:
+                router_result = await _run_agent_with_retry(
+                    get_router(),
+                    user_prompt=aggregated_prompt,
+                    usage_limits=UsageLimits(request_limit=1, tool_calls_limit=0),
+                )
+                router_route = router_result.output.route
+            except Exception:  # pragma: no cover - router must never break the flow
+                logger.exception("Router failed; defaulting to single-turn handler")
+        else:
+            logger.debug("OPENAI_API_KEY missing; using single-turn flow by default")
+
+        if router_route == "multi_turn":
+            manager = get_multi_turn_manager()
+            try:
+                reply = await manager.handle_request(
+                    chat_id=request.chat_id,
+                    messages=request.messages,
+                    session=session,
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging path
+                logger.exception("Multi-turn manager failed")
+                raise HTTPException(
+                    status_code=500, detail="Multi-turn agent execution failed."
+                ) from exc
+
+            return await _finalize(
+                ChatResponse(
+                    message=reply.message,
+                    base_random_keys=reply.base_random_keys or None,
+                    member_random_keys=reply.member_random_keys or None,
+                )
             )
 
         agent = get_agent()

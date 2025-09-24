@@ -15,6 +15,18 @@
 - Image traffic is routed to a dedicated vision agent that consumes the uploaded BinaryContent directly and answers with a few Persian words describing the dominant object, without invoking catalogue tools.
 - The `/chat` endpoint treats the incoming `messages` array as the modalities of a single user turn; the presence of any `image` part triggers the vision agent even if the final element is textual.
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
+- After handing off any image-only requests, a lightweight router powered by `OPENAI_ROUTER_MODEL` classifies the remaining text into `single_turn` (direct answers) versus `multi_turn` (needs discovery). Until the dedicated multi-turn agent ships, we still send both paths to the legacy single-turn agent but keep debug logging so future work can branch cleanly.
+
+## Scenario 4 (multi-turn member discovery)
+- Text-only requests flagged as `multi_turn` by the router must be served by the dedicated multi-turn manager. The legacy single-turn agent should only receive `single_turn` prompts.
+- The multi-turn manager keeps per-`chat_id` state in memory (turn counter, collected filters, pending question, presented candidates) and never exceeds five assistant replies. On the fifth reply it must return exactly one `member_random_key`, falling back to the highest-scoring candidate if ambiguity remains.
+- Clarifying questions should start broad (category, city, price range, standout features) and quickly narrow down using differentiating attributes from the current candidate pool. Avoid repeating questions the user has already answered or explicitly excluded.
+- Constraint extraction relies on a lightweight Pydantic-AI helper; reuse `result.all_messages()` to persist its context between turns so token usage stays bounded.
+- Member search is handled via a single SQL query that joins base products, members, shops, and cities. Apply hard filters for structured fields (city, price range, warranty, score, shop IDs, category, brand) while feeding soft text hints into a weighted score composed of trigram similarity, shop score, warranty bonus, and price-range proximity.
+- Create a trigram index on `base_products.extra_features::text` if text search touches that column so discovery remains responsive.
+- When multiple strong candidates remain after targeted questioning, present up to five options in the format "{base_name} – فروشگاه {shop_id}" and let the user pick one or provide additional constraints.
+- Store any candidate list you surface to the user and honour follow-up selections by matching shop IDs, ordinal indices, or explicit member keys.
+- Clean up session state once a final answer is returned or the conversation is reset.
 
 ## Database indexes
 - `base_products`
@@ -37,3 +49,4 @@
 - Update this file whenever project rules or capabilities change so future tasks inherit accurate guidance.
 - Keep tool descriptions aligned with their real capabilities (search terms can include distinctive attributes; seller statistics accepts only the base random key with an optional city filter and returns the full aggregate payload).
 - Enclose every `agent.run` invocation in the shared `_run_agent_with_retry` helper so retries remain consistent across the API.
+- Populate `.env.template` whenever a new environment variable (such as `OPENAI_ROUTER_MODEL`) is introduced so deployments remain reproducible.
