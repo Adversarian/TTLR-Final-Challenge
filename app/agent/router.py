@@ -25,13 +25,11 @@ Label guidance:
   • comparing two (or more) explicitly named products,
   • asking for seller metrics (price, warranty, score) of a known base
     product.
-  These map to scenarios 1, 2, 3, and 5 from the problem statement and must
-  remain on the single-turn path.
 - multi_turn → the user only names a broad product category or vague intent and
   needs guidance to pick a specific catalogue item or seller (e.g. "help me
   find a بخور", "چه گزینه‌هایی موجوده" with price/colour/material preferences
-  but no concrete model). These resemble scenario 4 where the agent must ask
-  clarifying questions about features before selecting a seller.
+  but no concrete model). These are the exploratory shopping queries that
+  demand several clarifying questions before recommending one seller.
 
 Err toward single_turn unless the message is clearly ambiguous enough that the
 assistant must gather more detail. Never send direct product-level requests to
