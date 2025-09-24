@@ -16,6 +16,7 @@
 - The `/chat` endpoint treats the incoming `messages` array as the modalities of a single user turn; the presence of any `image` part triggers the vision agent even if the final element is textual.
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
 - Scenario 4 (multi-turn) requests are now delegated to `Scenario4Coordinator`, which manages constraint extraction, clarification planning, catalogue filtering, member resolution, and finalisation through a graph of specialised Pydantic-AI agents. The coordinator persists conversation state per `chat_id`, enforces the five-turn limit, and always returns exactly one member key by the final turn.
+- Multi-turn tools include `category_feature_statistics`, `filter_base_products_by_constraints`, and `filter_members_by_constraints`, covering feature discovery, catalogue narrowing, and seller resolution so the coordinator can converge on a single member within the turn budget.
 
 ## Database indexes
 - `base_products`
@@ -28,6 +29,7 @@
   - `idx_members_base_random_key` ensures the seller statistics aggregation can quickly collect offers for a base product.
   - `idx_members_shop_id` keeps lookups by shop efficient for warranty/score joins.
   - `idx_members_base_price` (B-tree on `(base_random_key, price)`) accelerates price range filters when resolving member offers.
+- Alembic revision `20250216_000005_add_indexes_for_multi_turn_filters` creates the extra-feature and member-price indexes that power the new scenario 4 filtering tools; apply migrations after pulling.
 
 ## Ground rules for new changes
 - Keep solutions simple, well-documented, and strongly typed; prefer the minimal implementation that satisfies the competition scenarios without per-scenario branching (scenario 0 may remain hard-coded).
