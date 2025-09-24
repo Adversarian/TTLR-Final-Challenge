@@ -7,7 +7,8 @@ from decimal import Decimal
 from typing import Iterable
 
 from pydantic_ai.tools import RunContext, Tool
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
+from sqlalchemy.sql import ColumnElement
 
 from ...models import BaseProduct, Brand, Category, City, Member, Shop
 from ..dependencies import AgentDependencies
@@ -23,19 +24,30 @@ from .schemas import (
 from .state import _normalise_aspect
 
 
+_NORMALISATION_MAP = {
+    "\u064a": "ی",
+    "\u0643": "ک",
+    "\u06cc": "ی",
+    "\u06a9": "ک",
+}
+
+
 def _normalise_text(value: str) -> str:
     """Lightweight normalisation shared across filtering utilities."""
 
-    replacements = {
-        "\u064a": "ی",
-        "\u0643": "ک",
-        "\u06cc": "ی",
-        "\u06a9": "ک",
-    }
     lowered = value.strip().lower()
-    for src, dest in replacements.items():
+    for src, dest in _NORMALISATION_MAP.items():
         lowered = lowered.replace(src, dest)
     return lowered
+
+
+def _normalise_sql_column(column) -> ColumnElement:
+    """Return an expression that mirrors `_normalise_text` for SQL columns."""
+
+    expr = func.lower(func.coalesce(column, ""))
+    for src, dest in _NORMALISATION_MAP.items():
+        expr = func.replace(expr, src, dest)
+    return expr
 
 
 def _resolve_category_filter(category_hint: str | None):
@@ -49,10 +61,11 @@ def _resolve_category_filter(category_hint: str | None):
         return None
 
     expressions = []
+    category_column = _normalise_sql_column(Category.title)
     for token in tokens:
         like_pattern = f"%{token}%"
-        expressions.append(func.lower(Category.title).like(like_pattern))
-    return and_(*expressions) if expressions else None
+        expressions.append(category_column.like(like_pattern))
+    return or_(*expressions) if expressions else None
 
 
 def _prepare_feature_requirements(
@@ -339,27 +352,34 @@ async def _filter_base_products_by_constraints(
         if brand_preferences:
             terms = [term.strip() for term in brand_preferences if term.strip()]
             if terms:
+                brand_column = _normalise_sql_column(Brand.title)
                 brand_conditions = [
-                    func.lower(Brand.title).like(f"%{_normalise_text(term)}%") for term in terms
+                    brand_column.like(f"%{_normalise_text(term)}%") for term in terms
                 ]
                 stmt = stmt.where(or_(*brand_conditions))
 
         if keywords:
             keyword_conditions = []
+            persian_name_column = _normalise_sql_column(BaseProduct.persian_name)
+            english_name_column = _normalise_sql_column(BaseProduct.english_name)
             for keyword in keywords:
                 stripped = keyword.strip()
                 if not stripped:
                     continue
                 pattern = f"%{_normalise_text(stripped)}%"
-                keyword_conditions.append(func.lower(BaseProduct.persian_name).like(pattern))
-                keyword_conditions.append(func.lower(func.coalesce(BaseProduct.english_name, "")).like(pattern))
+                keyword_conditions.append(persian_name_column.like(pattern))
+                keyword_conditions.append(english_name_column.like(pattern))
             if keyword_conditions:
                 stmt = stmt.where(or_(*keyword_conditions))
 
         if price_min is not None:
-            stmt = stmt.where(price_summary.c.max_price >= price_min)
+            stmt = stmt.where(
+                or_(price_summary.c.max_price >= price_min, price_summary.c.max_price.is_(None))
+            )
         if price_max is not None:
-            stmt = stmt.where(price_summary.c.min_price <= price_max)
+            stmt = stmt.where(
+                or_(price_summary.c.min_price <= price_max, price_summary.c.min_price.is_(None))
+            )
 
         stmt = stmt.limit(limit * 3)
         result = await session.execute(stmt)

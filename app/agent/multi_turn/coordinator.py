@@ -297,7 +297,11 @@ class Scenario4Coordinator:
 
         if not state.finalized_member_key:
             if force:
-                raise RuntimeError("Unable to resolve member offer within turn limit.")
+                failure_message = self._build_failure_message(state)
+                state.completed = True
+                await self._store.complete(state.chat_id)
+                state.next_turn()
+                return AgentReply(message=failure_message)
             # As a last resort, ask a broad clarifying question when budget remains.
             question = self._fallback_question(state)
             state.asked_questions.append(question)
@@ -650,6 +654,18 @@ class Scenario4Coordinator:
             "Summarise the final recommendation and restate the selected member key once."
             "\n" + json.dumps(payload, ensure_ascii=False)
         )
+
+    def _build_failure_message(self, state: Scenario4ConversationState) -> str:
+        """Craft a polite apology when no member can be resolved."""
+
+        base = (
+            "متأسفانه با وجود جست‌وجوی کامل نتوانستم فروشنده‌ای پیدا کنم که دقیقاً با شرایط شما منطبق باشد."
+        )
+        if state.unsatisfied_requirements:
+            details = "؛ ".join(state.unsatisfied_requirements)
+            base += f" مواردی که رعایت نشد: {details}."
+        base += " لطفاً اگر مایل هستید، شرایط را کمی تغییر دهید یا اطلاعات بیشتری بدهید تا بتوانم دوباره تلاش کنم."
+        return base
 
     def _fallback_question(self, state: Scenario4ConversationState) -> str:
         """Return a conservative follow-up question when no better option exists."""

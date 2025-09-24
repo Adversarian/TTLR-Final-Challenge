@@ -94,6 +94,44 @@ async def test_forces_final_member_on_last_turn(monkeypatch: pytest.MonkeyPatch)
     assert state.completed is True
 
 
+async def test_force_final_failure_returns_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    coordinator = Scenario4Coordinator()
+    state = await coordinator._store.get("force-failure")  # type: ignore[attr-defined]
+    state.turn_count = 4
+
+    extraction = ConstraintExtraction(summary="needs guidance")
+    plan = ClarificationPlan(action="finalize", question=None, rationale="turn cap reached")
+    member_response = MemberFilterResponse(offers=[])
+
+    async def _fake_run_agent(self, *, agent_key, **kwargs):
+        if agent_key == "constraint_extractor":
+            return extraction
+        if agent_key == "clarification":
+            return plan
+        if agent_key == "member_resolver":
+            return member_response
+        raise AssertionError(f"Unexpected agent key: {agent_key}")
+
+    async def _fake_fallback_member_offer(self, state, deps):
+        return None, []
+
+    monkeypatch.setattr(Scenario4Coordinator, "_run_agent", _fake_run_agent)
+    monkeypatch.setattr(Scenario4Coordinator, "_fallback_member_offer", _fake_fallback_member_offer)
+
+    deps = AgentDependencies(session=_StubSession(), session_factory=_StubSessionFactory())
+    reply = await coordinator.handle_turn(
+        chat_id="force-failure",
+        user_message="باشه",
+        deps=deps,
+        usage_limits=None,
+    )
+
+    assert reply.member_random_keys == []
+    assert reply.message and "نتوانستم" in reply.message
+    assert state.completed is True
+    assert state.turn_count == state.max_turns
+
+
 def test_fallback_question_ignores_dismissed_aspects() -> None:
     coordinator = Scenario4Coordinator()
     state = Scenario4ConversationState(chat_id="dismissed")
