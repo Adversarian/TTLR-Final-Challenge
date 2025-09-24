@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .dependencies import AgentDependencies
 from .factory import get_agent
+from .router import RouterDecision, RouterReply, get_router
 from .schemas import (
     AgentReply,
     CitySellerStatistics,
@@ -34,4 +35,7 @@ __all__ = [
     "SELLER_STATISTICS_TOOL",
     "_fetch_feature_details",
     "get_agent",
+    "get_router",
+    "RouterDecision",
+    "RouterReply",
 ]

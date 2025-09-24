@@ -37,3 +37,4 @@
 - Update this file whenever project rules or capabilities change so future tasks inherit accurate guidance.
 - Keep tool descriptions aligned with their real capabilities (search terms can include distinctive attributes; seller statistics accepts only the base random key with an optional city filter and returns the full aggregate payload).
 - Enclose every `agent.run` invocation in the shared `_run_agent_with_retry` helper so retries remain consistent across the API.
+- A lightweight router in `app/agent/router.py` classifies textual requests as `single_turn` or `multi_turn` using `OPENAI_ROUTER_MODEL`. The `/chat` endpoint only invokes it after ruling out vision requests, defaults to single-turn handling if routing fails, and currently reuses the existing assistant even when multi-turn is flagged so future work can swap in the dedicated scenario 4 agent without regressing other scenarios.

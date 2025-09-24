@@ -17,7 +17,7 @@ from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .agent import AgentDependencies, get_agent
+from .agent import AgentDependencies, RouterDecision, get_agent, get_router
 from .agent.image import get_image_agent
 from .db import AsyncSessionLocal, get_session
 from .logging_utils.judge_requests import request_logger
@@ -218,6 +218,22 @@ async def chat_endpoint(
         if not aggregated_prompt:
             return await _finalize(
                 ChatResponse(message="No textual message found in the request.")
+            )
+
+        router_decision = RouterDecision.SINGLE_TURN
+        try:
+            router = get_router()
+            routing_result = await _run_agent_with_retry(
+                router, user_prompt=aggregated_prompt
+            )
+            router_decision = routing_result.output.decision
+        except Exception:  # pragma: no cover - defensive logging path
+            logger.exception("Routing agent failed; defaulting to single-turn handling.")
+
+        multi_turn_required = router_decision is RouterDecision.MULTI_TURN
+        if multi_turn_required:
+            logger.debug(
+                "Routing agent flagged the request as multi-turn; fallback agent will be reused."
             )
 
         agent = get_agent()
