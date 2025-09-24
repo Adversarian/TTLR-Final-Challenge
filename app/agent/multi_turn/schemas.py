@@ -180,6 +180,16 @@ class MemberOffer(BaseModel):
     city_name: str | None = Field(
         None, description="City where the shop is registered, when available."
     )
+    matched_constraints: list[str] = Field(
+        default_factory=list,
+        description="Human-readable notes describing which constraints this offer satisfies.",
+    )
+    match_score: float = Field(
+        0.0,
+        ge=0.0,
+        le=1.0,
+        description="Relative ranking score derived from the satisfied constraints.",
+    )
 
 
 class MemberFilterResponse(BaseModel):

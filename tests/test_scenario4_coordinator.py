@@ -57,6 +57,8 @@ async def test_forces_final_member_on_last_turn(monkeypatch: pytest.MonkeyPatch)
         has_warranty=True,
         shop_score=Decimal("4.7"),
         city_name="تهران",
+        matched_constraints=["دارای گارانتی مطابق درخواست"],
+        match_score=0.85,
     )
     state.candidate_offers = [offer]
 

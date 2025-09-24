@@ -22,6 +22,7 @@ from .agents import (
 )
 from ...models import City, Member, Shop
 from .schemas import MemberOffer
+from .tools import _score_member_offer
 from .state import Scenario4ConversationState, _normalise_text as _normalise_city_text
 
 
@@ -327,6 +328,7 @@ class Scenario4Coordinator:
         """Best-effort lookup when the resolver could not find a compliant offer."""
 
         constraints = state.constraints
+        dismissed = set(constraints.dismissed_aspects)
         price_min = constraints.price_min if not constraints.aspect_dismissed("price") else None
         price_max = constraints.price_max if not constraints.aspect_dismissed("price") else None
         city_preferences = (
@@ -339,6 +341,12 @@ class Scenario4Coordinator:
             if constraints.require_warranty is True
             and not constraints.aspect_dismissed("warranty")
             else False
+        )
+        scoring_require_warranty = (
+            True
+            if constraints.require_warranty is True
+            and not constraints.aspect_dismissed("warranty")
+            else None
         )
         min_shop_score = (
             constraints.min_shop_score
@@ -439,6 +447,18 @@ class Scenario4Coordinator:
                                     continue
 
                                 member_random_key, price, shop_id, has_warranty, score, city_name = row
+                                matched_constraints, match_score = _score_member_offer(
+                                    price=int(price),
+                                    has_warranty=bool(has_warranty),
+                                    shop_score=score,
+                                    city_name=city_name,
+                                    price_min=price_min,
+                                    price_max=price_max,
+                                    require_warranty=scoring_require_warranty,
+                                    min_shop_score=min_shop_score,
+                                    city=city_value,
+                                    dismissed=dismissed,
+                                )
                                 offer = MemberOffer(
                                     member_random_key=member_random_key,
                                     shop_id=int(shop_id),
@@ -446,6 +466,8 @@ class Scenario4Coordinator:
                                     has_warranty=bool(has_warranty),
                                     shop_score=Decimal(str(score)) if score is not None else None,
                                     city_name=city_name,
+                                    matched_constraints=matched_constraints,
+                                    match_score=match_score,
                                 )
                                 state.locked_base_key = candidate_key
                                 return offer, notes
@@ -481,6 +503,18 @@ class Scenario4Coordinator:
                     score,
                     city_name,
                 ) = row
+                matched_constraints, match_score = _score_member_offer(
+                    price=int(price),
+                    has_warranty=bool(has_warranty),
+                    shop_score=score,
+                    city_name=city_name,
+                    price_min=price_min,
+                    price_max=price_max,
+                    require_warranty=scoring_require_warranty,
+                    min_shop_score=min_shop_score,
+                    city=city_preferences[0] if city_preferences else None,
+                    dismissed=dismissed,
+                )
                 offer = MemberOffer(
                     member_random_key=member_random_key,
                     shop_id=int(shop_id),
@@ -488,6 +522,8 @@ class Scenario4Coordinator:
                     has_warranty=bool(has_warranty),
                     shop_score=Decimal(str(score)) if score is not None else None,
                     city_name=city_name,
+                    matched_constraints=matched_constraints,
+                    match_score=match_score,
                 )
                 notes = [
                     "برای پاسخ‌گویی مجبور شدم نزدیک‌ترین فروشنده موجود در کل کاتالوگ را معرفی کنم."

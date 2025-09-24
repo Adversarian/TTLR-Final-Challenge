@@ -20,6 +20,7 @@ from .schemas import (
     MemberOffer,
     ProductFilterResponse,
 )
+from .state import _normalise_aspect
 
 
 def _normalise_text(value: str) -> str:
@@ -78,11 +79,13 @@ def _match_feature(
     required_name: str,
     required_value: str,
     match: str,
+    *,
+    fallback_texts: Iterable[str] | None = None,
 ) -> tuple[bool, str | None]:
     """Return whether a feature constraint is satisfied and an optional note."""
 
-    value_note: str | None = None
     required_value_norm = _normalise_text(required_value)
+    required_name_norm = _normalise_text(required_name)
     numeric_value = None
     try:
         numeric_value = float(required_value.replace(",", ""))
@@ -91,7 +94,7 @@ def _match_feature(
 
     for name, value in flattened:
         normalised_name = _normalise_text(name)
-        if required_name not in normalised_name and normalised_name not in required_name:
+        if required_name_norm and required_name_norm not in normalised_name and normalised_name not in required_name_norm:
             continue
 
         candidate_value_norm = _normalise_text(value)
@@ -108,7 +111,25 @@ def _match_feature(
             if match == "max_value" and detected_number <= numeric_value:
                 return True, f"{name}: {value}"
 
-    return False, value_note
+    if not fallback_texts:
+        return False, None
+
+    for text in fallback_texts:
+        if not text:
+            continue
+        normalised_text = _normalise_text(text)
+        if match in {"equals", "contains"} and required_value_norm and required_value_norm in normalised_text:
+            return True, f"نام محصول حاوی {required_value.strip()}"
+        if match == "min_value" and numeric_value is not None:
+            detected_number = _extract_first_number(normalised_text)
+            if detected_number is not None and detected_number >= numeric_value:
+                return True, f"نام محصول مقدار {detected_number:g} را ذکر کرده است"
+        if match == "max_value" and numeric_value is not None:
+            detected_number = _extract_first_number(normalised_text)
+            if detected_number is not None and detected_number <= numeric_value:
+                return True, f"نام محصول مقدار {detected_number:g} را ذکر کرده است"
+
+    return False, None
 
 
 def _extract_first_number(value: str) -> float | None:
@@ -134,6 +155,86 @@ def _extract_first_number(value: str) -> float | None:
         return float("".join(digits))
     except ValueError:
         return None
+
+
+def _score_member_offer(
+    *,
+    price: int,
+    has_warranty: bool,
+    shop_score: Decimal | float | int | None,
+    city_name: str | None,
+    price_min: int | None,
+    price_max: int | None,
+    require_warranty: bool | None,
+    min_shop_score: float | None,
+    city: str | None,
+    dismissed: set[str],
+) -> tuple[list[str], float]:
+    """Return matched constraint notes and a ranking score for a member offer."""
+
+    matched: list[str] = []
+    score = 0.1
+
+    consider_price = "price" not in dismissed and (
+        price_min is not None or price_max is not None
+    )
+    consider_warranty = require_warranty is True and "warranty" not in dismissed
+    consider_score = min_shop_score is not None and "shop_score" not in dismissed
+    consider_city = city is not None and "city" not in dismissed
+
+    if consider_price:
+        range_hit = True
+        price_notes: list[str] = []
+        if price_min is not None:
+            if price >= price_min:
+                price_notes.append(f"قیمت بالاتر از {price_min:,} تومان")
+                score += 0.2
+            else:
+                range_hit = False
+        if price_max is not None:
+            if price <= price_max:
+                price_notes.append(f"قیمت کمتر از {price_max:,} تومان")
+                score += 0.2
+            else:
+                range_hit = False
+        if (
+            price_min is not None
+            and price_max is not None
+            and range_hit
+            and price_min <= price <= price_max
+        ):
+            score += 0.1
+            price_notes = [
+                f"قیمت در بازه {price_min:,} تا {price_max:,} تومان"
+            ]
+        matched.extend(price_notes)
+
+    if consider_warranty and has_warranty:
+        matched.append("دارای گارانتی مطابق درخواست")
+        score += 0.2
+
+    if consider_score and shop_score is not None:
+        numeric_score = float(shop_score)
+        if numeric_score >= float(min_shop_score):
+            matched.append(
+                f"امتیاز فروشنده {numeric_score:.1f} بالاتر از {min_shop_score:g}"
+            )
+            score += 0.1
+
+    if consider_city and city_name:
+        if _normalise_text(city_name) == _normalise_text(city or ""):
+            matched.append(f"ارسال از شهر {city_name}")
+            score += 0.1
+
+    # Ensure notes remain unique while preserving order.
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for note in matched:
+        if note not in seen:
+            seen.add(note)
+            deduped.append(note)
+
+    return deduped, min(round(score, 3), 1.0)
 
 
 async def _category_feature_statistics(
@@ -281,58 +382,71 @@ async def _filter_base_products_by_constraints(
         extra_features,
     ) in rows:
         flattened = _flatten_features(extra_features if isinstance(extra_features, dict) else {})
+        fallback_texts = []
+        if persian_name:
+            fallback_texts.append(persian_name)
+        if english_name:
+            fallback_texts.append(english_name)
 
-        # Enforce required features.
         matched_notes: list[str] = []
         required_matches = 0
         for name, value, match in prepared_required:
-            ok, note = _match_feature(flattened, name, value, match)
-            if not ok:
-                break
-            required_matches += 1
-            if note:
-                matched_notes.append(note)
-        else:
-            # Only executed when all required features passed.
-            excluded_hit = False
-            for name, value, match in prepared_excluded:
-                present, _ = _match_feature(flattened, name, value, match)
-                if present:
-                    excluded_hit = True
-                    break
-
-            if excluded_hit:
-                continue
-
-            optional_matches = 0
-            for name, value, match in prepared_optional:
-                ok, note = _match_feature(flattened, name, value, match)
-                if ok:
-                    optional_matches += 1
-                    if note:
-                        matched_notes.append(note)
-
-            coverage = 0.0
-            if prepared_required:
-                coverage += 0.7 * (required_matches / max(len(prepared_required), 1))
-            else:
-                coverage += 0.4
-            if prepared_optional:
-                coverage += 0.3 * (optional_matches / len(prepared_optional))
-
-            candidates.append(
-                FilteredProduct(
-                    base_random_key=random_key,
-                    persian_name=persian_name,
-                    english_name=english_name,
-                    category_title=category_title,
-                    brand_title=brand_title,
-                    min_price=int(min_price) if min_price is not None else None,
-                    max_price=int(max_price) if max_price is not None else None,
-                    matched_features=matched_notes,
-                    match_score=min(round(coverage, 3), 1.0),
-                )
+            ok, note = _match_feature(
+                flattened, name, value, match, fallback_texts=fallback_texts
             )
+            if ok:
+                required_matches += 1
+                if note and note not in matched_notes:
+                    matched_notes.append(note)
+
+        excluded_hit = False
+        for name, value, match in prepared_excluded:
+            present, _ = _match_feature(
+                flattened, name, value, match, fallback_texts=fallback_texts
+            )
+            if present:
+                excluded_hit = True
+                break
+
+        if excluded_hit:
+            continue
+
+        optional_matches = 0
+        for name, value, match in prepared_optional:
+            ok, note = _match_feature(
+                flattened, name, value, match, fallback_texts=fallback_texts
+            )
+            if ok:
+                optional_matches += 1
+                if note and note not in matched_notes:
+                    matched_notes.append(note)
+
+        coverage = 0.15
+        if prepared_required:
+            coverage += 0.55 * (required_matches / len(prepared_required))
+            if required_matches == len(prepared_required):
+                coverage += 0.1
+        else:
+            coverage += 0.35
+
+        if prepared_optional:
+            coverage += 0.2 * (optional_matches / len(prepared_optional))
+        else:
+            coverage += 0.1
+
+        candidates.append(
+            FilteredProduct(
+                base_random_key=random_key,
+                persian_name=persian_name,
+                english_name=english_name,
+                category_title=category_title,
+                brand_title=brand_title,
+                min_price=int(min_price) if min_price is not None else None,
+                max_price=int(max_price) if max_price is not None else None,
+                matched_features=matched_notes,
+                match_score=min(round(coverage, 3), 1.0),
+            )
+        )
 
     candidates.sort(key=lambda product: (product.match_score, -(product.min_price or 0)), reverse=True)
     return ProductFilterResponse(candidates=candidates[:limit])
@@ -347,6 +461,7 @@ async def _filter_members_by_constraints(
     require_warranty: bool | None = None,
     min_shop_score: float | None = None,
     city: str | None = None,
+    dismissed_aspects: list[str] | None = None,
     limit: int = 10,
 ) -> MemberFilterResponse:
     """Return member offers for a resolved base product."""
@@ -354,6 +469,14 @@ async def _filter_members_by_constraints(
     trimmed_key = base_random_key.strip()
     if not trimmed_key:
         return MemberFilterResponse(offers=[])
+
+    dismissed = {
+        token
+        for raw in dismissed_aspects or []
+        if raw and raw.strip()
+        for token in [_normalise_aspect(raw)]
+        if token
+    }
 
     async with ctx.deps.session_factory() as session:
         stmt = (
@@ -368,36 +491,58 @@ async def _filter_members_by_constraints(
             .join(Shop, Shop.id == Member.shop_id)
             .join(City, City.id == Shop.city_id, isouter=True)
             .where(Member.base_random_key == trimmed_key)
+            .order_by(Member.price.asc(), Shop.score.desc())
+            .limit(max(limit * 5, 20))
         )
 
-        if price_min is not None:
-            stmt = stmt.where(Member.price >= price_min)
-        if price_max is not None:
-            stmt = stmt.where(Member.price <= price_max)
-        if require_warranty is True:
-            stmt = stmt.where(Shop.has_warranty.is_(True))
-        if min_shop_score is not None:
-            stmt = stmt.where(Shop.score >= float(min_shop_score))
-        if city:
-            stmt = stmt.where(func.lower(City.name) == _normalise_text(city))
-
-        stmt = stmt.order_by(Member.price.asc(), Shop.score.desc()).limit(limit)
         result = await session.execute(stmt)
+        rows = list(result)
 
     offers: list[MemberOffer] = []
-    for random_key, price, shop_id, has_warranty, score, city_name in result:
+    for random_key, price, shop_id, has_warranty, score, city_name in rows:
+        matched_constraints, match_score = _score_member_offer(
+            price=int(price),
+            has_warranty=bool(has_warranty),
+            shop_score=score,
+            city_name=city_name,
+            price_min=price_min,
+            price_max=price_max,
+            require_warranty=require_warranty,
+            min_shop_score=min_shop_score,
+            city=city,
+            dismissed=dismissed,
+        )
+
+        if isinstance(score, Decimal):
+            shop_score_value: Decimal | None = score
+        elif isinstance(score, (int, float)):
+            shop_score_value = Decimal(str(score))
+        else:
+            shop_score_value = None
+
         offers.append(
             MemberOffer(
                 member_random_key=random_key,
                 shop_id=int(shop_id),
                 price=int(price),
                 has_warranty=bool(has_warranty),
-                shop_score=Decimal(score) if isinstance(score, (int, float, Decimal)) else None,
+                shop_score=shop_score_value,
                 city_name=city_name,
+                matched_constraints=matched_constraints,
+                match_score=match_score,
             )
         )
 
-    return MemberFilterResponse(offers=offers)
+    offers.sort(
+        key=lambda offer: (
+            -offer.match_score,
+            offer.price,
+            0 if offer.has_warranty else 1,
+            -float(offer.shop_score) if offer.shop_score is not None else 0.0,
+        )
+    )
+
+    return MemberFilterResponse(offers=offers[:limit])
 
 
 CATEGORY_FEATURE_STATISTICS_TOOL = Tool(
@@ -427,9 +572,10 @@ FILTER_MEMBERS_TOOL = Tool(
     _filter_members_by_constraints,
     name="filter_members_by_constraints",
     description=(
-        "Given a resolved base product, retrieve shop-specific offers that honour price, "
-        "warranty, score, or city requirements. Use this to pick the single best member "
-        "once the correct base product is known."
+        "Given a resolved base product, retrieve shop-specific offers and rank them by how "
+        "well they satisfy price, warranty, score, or city requirements. The response "
+        "includes matched constraint notes and a `match_score` so you can pick the best "
+        "member even when no offer satisfies every filter."
     ),
 )
 
