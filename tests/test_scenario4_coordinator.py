@@ -107,3 +107,68 @@ def test_fallback_question_ignores_dismissed_aspects() -> None:
 
     assert "برند" not in question
     assert question.endswith("تا سریع‌تر جمع‌بندی کنم.")
+
+
+class _DummyResult:
+    def __init__(self, output, messages):
+        self.output = output
+        self._messages = messages
+
+    def all_messages(self, *, output_tool_return_content=None):
+        return list(self._messages)
+
+    def new_messages(self, *, output_tool_return_content=None):  # pragma: no cover - legacy compatibility
+        return [self._messages[-1]] if self._messages else []
+
+
+class _DummyAgent:
+    def __init__(self, transcripts):
+        self._transcripts = transcripts
+        self.calls = 0
+        self.seen_histories = []
+
+    async def run(self, *, message_history=None, **kwargs):
+        self.seen_histories.append(message_history)
+        if self.calls >= len(self._transcripts):
+            raise AssertionError("Too many agent invocations")
+        output, messages = self._transcripts[self.calls]
+        self.calls += 1
+        return _DummyResult(output, messages)
+
+
+async def test_run_agent_persists_full_history() -> None:
+    coordinator = Scenario4Coordinator()
+    state = Scenario4ConversationState(chat_id="history")
+    deps = AgentDependencies(session=_StubSession(), session_factory=_StubSessionFactory())
+
+    messages_run1 = ["assistant-tool-call", "tool-response"]
+    messages_run2 = messages_run1 + ["assistant-final"]
+    agent = _DummyAgent([
+        ("first-output", messages_run1),
+        ("second-output", messages_run2),
+    ])
+
+    result1 = await coordinator._run_agent(
+        agent_key="probe",
+        agent_factory=lambda: agent,
+        state=state,
+        deps=deps,
+        prompt="step one",
+        usage_limits=None,
+    )
+
+    assert result1 == "first-output"
+    assert state.agent_histories["probe"] == messages_run1
+
+    result2 = await coordinator._run_agent(
+        agent_key="probe",
+        agent_factory=lambda: agent,
+        state=state,
+        deps=deps,
+        prompt="step two",
+        usage_limits=None,
+    )
+
+    assert result2 == "second-output"
+    assert state.agent_histories["probe"] == messages_run2
+    assert agent.seen_histories == [None, messages_run1]

@@ -61,12 +61,14 @@ You decide the next move in a multi-turn shopping dialogue. Consider the
 collected constraints, questions already asked, candidate counts, dismissed
 aspects, and remaining turns. Output one of five actions: ask_question,
 search_products, present_candidates, resolve_members, or finalize. When asking
-another question, write a single focused sentence that narrows the search (e.g.,
-key feature, preferred brand, price clarification). Never revisit topics listed in
-`dismissed_aspects`. When you already have two or more candidates and at least
-two turns remain, present them for user selection instead of re-querying. If the
-constraints look sufficient or the turn budget is nearly exhausted, advance to
-searching or resolving members.
+another question, respond with a single message (one or two sentences). Early in
+the dialogue you may bundle multiple aspects together (مثلاً دسته، کاربرد و بودجه)
+to gather context quickly, then shift to a focused follow-up (key feature,
+preferred brand, price clarification) as details accumulate. Never revisit topics
+listed in `dismissed_aspects`. When you already have two or more candidates and
+at least two turns remain, present them for user selection instead of
+re-querying. If the constraints look sufficient or the turn budget is nearly
+exhausted, advance to searching or resolving members.
 """.strip()
 
 

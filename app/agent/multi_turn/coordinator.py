@@ -557,16 +557,14 @@ class Scenario4Coordinator:
         """Execute an agent while preserving its conversation history."""
 
         agent = agent_factory()
-        history = state.agent_histories.setdefault(agent_key, [])
+        history = state.agent_histories.get(agent_key)
         result = await agent.run(
             user_prompt=prompt,
             deps=deps,
             message_history=list(history) if history else None,
             usage_limits=usage_limits,
         )
-        new_messages = result.new_messages()
-        if new_messages:
-            history.extend(new_messages)
+        state.agent_histories[agent_key] = list(result.all_messages())
         return result.output
 
     def _build_extraction_prompt(
@@ -658,7 +656,7 @@ class Scenario4Coordinator:
 
         constraints = state.constraints
         if not constraints.category_hint:
-            return "برای چه نوع محصول یا دسته‌ای به دنبال گزینه هستید؟"
+            return "برای چه نوع محصول یا دسته‌ای به دنبال گزینه هستید و چه بودجه یا ویژگی شاخصی برایتان مهم است؟"
         if not constraints.brand_preferences and not constraints.aspect_dismissed("brand"):
             return "برند یا سبک خاصی مدنظرتان است تا دقیق‌تر جستجو کنم؟"
         if (
