@@ -17,7 +17,13 @@ from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .agent import AgentDependencies, RouterDecision, get_agent, get_router
+from .agent import (
+    AgentDependencies,
+    RouterDecision,
+    get_agent,
+    get_router,
+    get_scenario4_coordinator,
+)
 from .agent.image import get_image_agent
 from .db import AsyncSessionLocal, get_session
 from .logging_utils.judge_requests import request_logger
@@ -169,6 +175,7 @@ async def chat_endpoint(
                 return await _finalize(ChatResponse(member_random_keys=[member_key]))
 
         aggregated_prompt = "\n\n".join(text_segments).strip()
+        latest_user_message = text_segments[-1] if text_segments else aggregated_prompt
 
         if image_payloads:
             try:
@@ -232,8 +239,27 @@ async def chat_endpoint(
 
         multi_turn_required = router_decision is RouterDecision.MULTI_TURN
         if multi_turn_required:
-            logger.debug(
-                "Routing agent flagged the request as multi-turn; fallback agent will be reused."
+            coordinator = get_scenario4_coordinator()
+            deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
+            try:
+                multi_turn_reply = await coordinator.handle_turn(
+                    chat_id=request.chat_id,
+                    user_message=latest_user_message,
+                    deps=deps,
+                    usage_limits=UsageLimits(request_limit=6, tool_calls_limit=10),
+                )
+            except Exception as exc:  # pragma: no cover - defensive logging path
+                raise HTTPException(
+                    status_code=500, detail="Scenario 4 coordinator failed."
+                ) from exc
+
+            clipped_multi_turn = multi_turn_reply.clipped()
+            return await _finalize(
+                ChatResponse(
+                    message=clipped_multi_turn.message,
+                    base_random_keys=clipped_multi_turn.base_random_keys or None,
+                    member_random_keys=clipped_multi_turn.member_random_keys or None,
+                )
             )
 
         agent = get_agent()

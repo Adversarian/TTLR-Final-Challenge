@@ -15,6 +15,7 @@
 - Image traffic is routed to a dedicated vision agent that consumes the uploaded BinaryContent directly and answers with a few Persian words describing the dominant object, without invoking catalogue tools.
 - The `/chat` endpoint treats the incoming `messages` array as the modalities of a single user turn; the presence of any `image` part triggers the vision agent even if the final element is textual.
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
+- Scenario 4 (multi-turn) requests are now delegated to `Scenario4Coordinator`, which manages constraint extraction, clarification planning, catalogue filtering, member resolution, and finalisation through a graph of specialised Pydantic-AI agents. The coordinator persists conversation state per `chat_id`, enforces the five-turn limit, and always returns exactly one member key by the final turn.
 
 ## Database indexes
 - `base_products`
@@ -22,9 +23,11 @@
   - `idx_base_products_english_name_trgm` (GIN with `gin_trgm_ops`) backs English-name fuzzy searches for the same tool.
   - `idx_base_products_search_vector` (GIN on a generated `tsvector`) supports TF/IDF reranking without full table scans.
   - `idx_base_products_category` and `idx_base_products_brand` remain available for potential category/brand filters while exploring catalogue data.
+  - `idx_base_products_extra_features_gin` (GIN on `extra_features`) supports containment and statistics queries for scenario 4 feature analysis.
 - `members`
   - `idx_members_base_random_key` ensures the seller statistics aggregation can quickly collect offers for a base product.
   - `idx_members_shop_id` keeps lookups by shop efficient for warranty/score joins.
+  - `idx_members_base_price` (B-tree on `(base_random_key, price)`) accelerates price range filters when resolving member offers.
 
 ## Ground rules for new changes
 - Keep solutions simple, well-documented, and strongly typed; prefer the minimal implementation that satisfies the competition scenarios without per-scenario branching (scenario 0 may remain hard-coded).
@@ -36,5 +39,5 @@
 - Run `uv run pytest` (and any other affected checks) before completing a task to keep the test suite passing.
 - Update this file whenever project rules or capabilities change so future tasks inherit accurate guidance.
 - Keep tool descriptions aligned with their real capabilities (search terms can include distinctive attributes; seller statistics accepts only the base random key with an optional city filter and returns the full aggregate payload).
-- Enclose every `agent.run` invocation in the shared `_run_agent_with_retry` helper so retries remain consistent across the API.
-- A lightweight router in `app/agent/router.py` classifies textual requests as `single_turn` or `multi_turn` using `OPENAI_ROUTER_MODEL`. The `/chat` endpoint only invokes it after ruling out vision requests, defaults to single-turn handling if routing fails, and currently reuses the existing assistant even when multi-turn is flagged so future work can swap in the dedicated scenario 4 agent without regressing other scenarios.
+- Enclose every `agent.run` invocation in the shared `_run_agent_with_retry` helper so retries remain consistent across the API. Scenario 4's coordinator uses dedicated helpers but still relies on `result.new_messages()` to extend each agent's chat history after every call.
+- A lightweight router in `app/agent/router.py` classifies textual requests as `single_turn` or `multi_turn` using `OPENAI_ROUTER_MODEL`. After vision handling the `/chat` endpoint now routes multi-turn traffic to `get_scenario4_coordinator()`; single-turn requests continue to use the legacy assistant.

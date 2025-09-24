@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from .dependencies import AgentDependencies
 from .factory import get_agent
+from .multi_turn.coordinator import (
+    Scenario4Coordinator,
+    get_scenario4_coordinator,
+)
 from .router import RouterDecision, RouterReply, get_router
 from .schemas import (
     AgentReply,
@@ -38,4 +42,6 @@ __all__ = [
     "get_router",
     "RouterDecision",
     "RouterReply",
+    "Scenario4Coordinator",
+    "get_scenario4_coordinator",
 ]

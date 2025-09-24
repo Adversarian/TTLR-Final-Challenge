@@ -17,7 +17,7 @@ os.environ.setdefault("POSTGRES_DB", "torob")
 
 import app.main as app_main
 import app.logging_utils.judge_requests as request_logging
-from app.agent import AgentReply
+from app.agent import AgentReply, RouterDecision, RouterReply
 from app.main import app
 from app.db import get_session
 
@@ -192,6 +192,16 @@ class _StubAgent:
 
     async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
         return SimpleNamespace(output=self._reply)
+
+
+class _StubRouter:
+    """Router stub returning a fixed decision."""
+
+    def __init__(self, decision: RouterDecision) -> None:
+        self._decision = decision
+
+    async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
+        return SimpleNamespace(output=RouterReply(decision=self._decision))
 
 
 class _RecorderLogger:
@@ -375,3 +385,36 @@ def test_agent_error_is_logged_with_status(
     payload = recorder.responses[-1][2]
     assert isinstance(payload, dict)
     assert payload["detail"] == "Agent execution failed."
+
+
+def test_multi_turn_requests_use_coordinator(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Router multi-turn decisions should delegate to the scenario 4 coordinator."""
+
+    app.dependency_overrides[get_session] = _session_override
+
+    class _StubCoordinator:
+        async def handle_turn(self, **kwargs):
+            return AgentReply(message="سوال بعدی؟")
+
+    stub_coordinator = _StubCoordinator()
+
+    monkeypatch.setattr(app_main, "get_router", lambda: _StubRouter(RouterDecision.MULTI_TURN))
+    monkeypatch.setattr(app_main, "get_scenario4_coordinator", lambda: stub_coordinator)
+
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "chat_id": "mt-session",
+                "messages": [{"type": "text", "content": "یک پیشنهاد بده"}],
+            },
+        )
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["message"] == "سوال بعدی؟"
+    assert payload["member_random_keys"] is None

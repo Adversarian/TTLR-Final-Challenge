@@ -121,6 +121,11 @@ class BaseProduct(Base):
             "search_vector",
             postgresql_using="gin",
         ),
+        Index(
+            "idx_base_products_extra_features_gin",
+            "extra_features",
+            postgresql_using="gin",
+        ),
     )
 
 
@@ -143,6 +148,7 @@ class Member(Base):
     __table_args__ = (
         Index("idx_members_base_random_key", "base_random_key"),
         Index("idx_members_shop_id", "shop_id"),
+        Index("idx_members_base_price", "base_random_key", "price"),
     )
 
 
