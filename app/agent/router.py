@@ -18,16 +18,24 @@ request can be fulfilled in a single response or if it demands a multi-turn
 dialogue to gather clarifying details.
 
 Label guidance:
-- single_turn → the user already names a specific catalogue product, model
-  number, SKU, or directly asks for a factual attribute/seller metric about a
-  known item. These are immediately answerable.
-- multi_turn → the user only mentions a product category (e.g. لوستر، بخور،
-  سرویس قابلمه) together with loose preferences such as price range, material,
-  colour, shipping, or "help me find" phrasing. These require follow-up
-  questions to identify the exact product before querying sellers.
+- single_turn → the user already references identifiable catalogue products or
+  very specific questions that a single reply can cover. Typical examples are:
+  • asking for a known product by name/code/sku,
+  • requesting one attribute of a specific product,
+  • comparing two (or more) explicitly named products,
+  • asking for seller metrics (price, warranty, score) of a known base
+    product.
+  These map to scenarios 1, 2, 3, and 5 from the problem statement and must
+  remain on the single-turn path.
+- multi_turn → the user only names a broad product category or vague intent and
+  needs guidance to pick a specific catalogue item or seller (e.g. "help me
+  find a بخور", "چه گزینه‌هایی موجوده" with price/colour/material preferences
+  but no concrete model). These resemble scenario 4 where the agent must ask
+  clarifying questions about features before selecting a seller.
 
-Default to single_turn unless the request is clearly ambiguous enough that the
-assistant must ask clarifying questions.
+Err toward single_turn unless the message is clearly ambiguous enough that the
+assistant must gather more detail. Never send direct product-level requests to
+multi_turn.
 
 Respond with a JSON object containing a single field `decision` set to either
 `single_turn` or `multi_turn`.
