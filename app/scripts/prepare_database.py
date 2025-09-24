@@ -107,8 +107,8 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
     ensure_data_directory()
-    run_migrations()
     ensure_extensions()
+    run_migrations()
 
     if settings.import_marker_path.exists():
         LOGGER.info(
