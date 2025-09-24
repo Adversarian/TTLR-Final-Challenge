@@ -13,6 +13,16 @@ depends_on = None
 
 def upgrade() -> None:
     ctx = op.get_context()
+
+    op.execute(
+        "ALTER TABLE base_products "
+        "ALTER COLUMN extra_features TYPE jsonb USING extra_features::jsonb"
+    )
+    op.execute(
+        "ALTER TABLE base_products "
+        "ALTER COLUMN extra_features SET DEFAULT '{}'::jsonb"
+    )
+
     with ctx.autocommit_block():
         op.create_index(
             "idx_base_products_extra_features_gin",
@@ -46,3 +56,12 @@ def downgrade() -> None:
             table_name="base_products",
             postgresql_concurrently=True,
         )
+
+    op.execute(
+        "ALTER TABLE base_products "
+        "ALTER COLUMN extra_features TYPE json USING extra_features::json"
+    )
+    op.execute(
+        "ALTER TABLE base_products "
+        "ALTER COLUMN extra_features SET DEFAULT '{}'::json"
+    )

@@ -24,7 +24,7 @@
   - `idx_base_products_english_name_trgm` (GIN with `gin_trgm_ops`) backs English-name fuzzy searches for the same tool.
   - `idx_base_products_search_vector` (GIN on a generated `tsvector`) supports TF/IDF reranking without full table scans.
   - `idx_base_products_category` and `idx_base_products_brand` remain available for potential category/brand filters while exploring catalogue data.
-  - `idx_base_products_extra_features_gin` (GIN on `extra_features`) supports containment and statistics queries for scenario 4 feature analysis.
+  - `idx_base_products_extra_features_gin` (GIN on the `jsonb` `extra_features` column) supports containment and statistics queries for scenario 4 feature analysis.
 - `members`
   - `idx_members_base_random_key` ensures the seller statistics aggregation can quickly collect offers for a base product.
   - `idx_members_shop_id` keeps lookups by shop efficient for warranty/score joins.

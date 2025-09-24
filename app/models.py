@@ -19,7 +19,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import TSVECTOR
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 
 
 class Base(DeclarativeBase):
@@ -84,7 +84,7 @@ class BaseProduct(Base):
     )
     brand_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("brands.id"))
     extra_features: Mapped[dict] = mapped_column(
-        JSON, server_default=text("'{}'::json"), nullable=False
+        JSONB, server_default=text("'{}'::jsonb"), nullable=False
     )
     image_url: Mapped[Optional[str]] = mapped_column(Text)
     member_random_keys: Mapped[List[str]] = mapped_column(
