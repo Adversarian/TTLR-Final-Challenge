@@ -33,8 +33,10 @@ async def _search_members(
         limit = 5
     limit = min(limit, 5)
 
-    query_text = " ".join(token.strip() for token in query_tokens if token.strip())
-    has_query = bool(query_text)
+    normalized_tokens = [token.strip() for token in query_tokens if token.strip()]
+    query_text = " ".join(normalized_tokens)
+    has_query = bool(normalized_tokens)
+    tokens_json = json.dumps(normalized_tokens, ensure_ascii=False)
 
     stmt = text(
         """
@@ -53,7 +55,7 @@ async def _search_members(
                 CASE
                     WHEN :has_query
                         THEN (
-                            0.6 * ts_rank_cd(
+                            0.3 * ts_rank_cd(
                                 bp.search_vector,
                                 websearch_to_tsquery('simple', :query_text)
                             )
@@ -61,10 +63,8 @@ async def _search_members(
                                 bp.extra_features_vector,
                                 websearch_to_tsquery('simple', :query_text)
                             )
-                            + 0.2 * GREATEST(
-                                similarity(bp.persian_name, :query_text),
-                                similarity(COALESCE(bp.english_name, ''), :query_text)
-                            )
+                            + 0.3 * COALESCE(token_stats.max_phrase_rank, 0.0)
+                            + 0.2 * COALESCE(token_stats.max_similarity, 0.0)
                         )
                     ELSE 0.0
                 END AS relevance
@@ -72,6 +72,25 @@ async def _search_members(
             JOIN base_products AS bp ON bp.random_key = m.base_random_key
             LEFT JOIN brands AS br ON br.id = bp.brand_id
             JOIN shops AS s ON s.id = m.shop_id
+            LEFT JOIN LATERAL (
+                SELECT
+                    MAX(
+                        ts_rank_cd(
+                            bp.search_vector,
+                            websearch_to_tsquery(
+                                'simple',
+                                CONCAT('"', replace(token_text, '"', ' '), '"')
+                            )
+                        )
+                    ) AS max_phrase_rank,
+                    MAX(
+                        GREATEST(
+                            similarity(bp.persian_name, token_text),
+                            similarity(COALESCE(bp.english_name, ''), token_text)
+                        )
+                    ) AS max_similarity
+                FROM json_array_elements_text(:query_tokens_json::json) AS tokens(token_text)
+            ) AS token_stats ON TRUE
             WHERE (:brand_id IS NULL OR bp.brand_id = :brand_id)
               AND (:category_id IS NULL OR bp.category_id = :category_id)
               AND (:city_id IS NULL OR s.city_id = :city_id)
@@ -214,6 +233,7 @@ async def _search_members(
     ).bindparams(
         bindparam("has_query", type_=Boolean),
         bindparam("query_text", type_=SAText),
+        bindparam("query_tokens_json", type_=SAText),
         bindparam("brand_id", type_=Integer),
         bindparam("category_id", type_=Integer),
         bindparam("city_id", type_=Integer),
@@ -226,6 +246,7 @@ async def _search_members(
 
     params = {
         "query_text": query_text,
+        "query_tokens_json": tokens_json,
         "has_query": has_query,
         "brand_id": brand_id,
         "category_id": category_id,
