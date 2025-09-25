@@ -25,6 +25,8 @@
 - The policy first tries to resolve option selections, otherwise applies the NLU delta, executes one candidate search, and, when necessary, relaxes constraints in the following order: keywords → product attributes → price range → brand → city → category → minimum score → warranty.
 - When multiple candidates remain the coordinator asks at most two clarifying questions (`product_scope` then `shop_scope`) before presenting compact options; once options are shown it expects numeric replies (Persian or ASCII digits) and replays the option list if the response is invalid.
 - The multi-turn coordinator serialises access per `chat_id`, caches the last successful numeric selection for 60 seconds so repeated replies return the same `member_random_key`, and wraps each policy turn in a 25s timeout that falls back to short Persian error/timeout messages while preserving the previous state snapshot.
+- The dialogue policy now emits Logfire breadcrumbs for extracted NLU deltas, search constraint summaries, candidate counts, relaxation outcomes, and final stop reasons so multi-turn traces remain debuggable without replaying prompts.
+- Numeric option selections accept Persian digits even when attached to words (for example "گزینه۲") while still requiring an actual number to confirm a choice.
 
 ## Database indexes
 - `base_products`

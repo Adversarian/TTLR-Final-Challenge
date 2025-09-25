@@ -110,6 +110,39 @@ async def test_present_options_and_select_numeric() -> None:
 
 
 @pytest.mark.anyio("asyncio")
+async def test_numeric_selection_without_space() -> None:
+    state = TurnState()
+    candidates = [
+        _candidate("m-1", 0.9),
+        _candidate("m-2", 0.8),
+        _candidate("m-3", 0.7),
+    ]
+    search = StubSearch([CandidateSearchResult(count=3, candidates=candidates)])
+
+    await execute_policy_turn(
+        session=object(),
+        state=state,
+        user_message="",
+        parse_fn=_stub_parse(),
+        search_fn=search,
+    )
+
+    async def _fail_search(session, details):  # pragma: no cover - should not run
+        raise AssertionError("search should not be called during selection")
+
+    result = await execute_policy_turn(
+        session=object(),
+        state=state,
+        user_message="گزینه۲",
+        parse_fn=_stub_parse(),
+        search_fn=_fail_search,
+    )
+
+    assert result.reply.member_random_keys == ["m-2"]
+    assert state.stop_reason.name == "FOUND_UNIQUE_MEMBER"
+
+
+@pytest.mark.anyio("asyncio")
 async def test_invalid_selection_does_not_advance_turn() -> None:
     state = TurnState()
     candidates = [
