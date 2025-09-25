@@ -70,6 +70,13 @@ def _override_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(app_main, "get_router_decision_store", lambda: router_store)
 
 
+def test_router_decision_accepts_plain_label() -> None:
+    """Bare-string router outputs should validate without wrapping in JSON."""
+
+    decision = RouterDecision.model_validate("multi_turn")
+    assert decision.route == "multi_turn"
+
+
 def test_chat_accepts_image_payload(monkeypatch: pytest.MonkeyPatch) -> None:
     """An image message should route to the vision agent and return its reply."""
 

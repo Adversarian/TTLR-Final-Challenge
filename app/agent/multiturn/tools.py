@@ -6,7 +6,8 @@ import json
 from typing import List, Optional, Tuple
 
 from pydantic_ai.tools import RunContext, Tool
-from sqlalchemy import text, bindparam, Integer, Float, Boolean, Text as SAText
+from sqlalchemy import Boolean, Float, Integer, Text, bindparam, text
+from sqlalchemy.dialects.postgresql import JSON
 
 from ..dependencies import AgentDependencies
 from .schemas import (
@@ -36,7 +37,7 @@ async def _search_members(
     normalized_tokens = [token.strip() for token in query_tokens if token.strip()]
     query_text = " ".join(normalized_tokens)
     has_query = bool(normalized_tokens)
-    tokens_json = json.dumps(normalized_tokens, ensure_ascii=False)
+    tokens_payload = normalized_tokens
 
     stmt = text(
         """
@@ -89,7 +90,7 @@ async def _search_members(
                             similarity(COALESCE(bp.english_name, ''), token_text)
                         )
                     ) AS max_similarity
-                FROM json_array_elements_text(:query_tokens_json::json) AS tokens(token_text)
+                FROM json_array_elements_text(:query_tokens_json) AS tokens(token_text)
             ) AS token_stats ON TRUE
             WHERE (:brand_id IS NULL OR bp.brand_id = :brand_id)
               AND (:category_id IS NULL OR bp.category_id = :category_id)
@@ -232,8 +233,8 @@ async def _search_members(
         """
     ).bindparams(
         bindparam("has_query", type_=Boolean),
-        bindparam("query_text", type_=SAText),
-        bindparam("query_tokens_json", type_=SAText),
+        bindparam("query_text", type_=Text()),
+        bindparam("query_tokens_json", type_=JSON),
         bindparam("brand_id", type_=Integer),
         bindparam("category_id", type_=Integer),
         bindparam("city_id", type_=Integer),
@@ -246,7 +247,7 @@ async def _search_members(
 
     params = {
         "query_text": query_text,
-        "query_tokens_json": tokens_json,
+        "query_tokens_json": tokens_payload,
         "has_query": has_query,
         "brand_id": brand_id,
         "category_id": category_id,
