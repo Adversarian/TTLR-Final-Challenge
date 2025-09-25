@@ -229,6 +229,7 @@ async def _search_members(
                     )
                     FROM ranked
                     WHERE row_number <= :limit
+                      AND relevance > 0
                 ),
                 '[]'::json
             ),
