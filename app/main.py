@@ -27,7 +27,7 @@ from .agent.multiturn import (
     get_turn_state_store,
     normalize_persian_digits,
 )
-from .agent.router import get_conversation_router
+from .agent.router import get_conversation_router, get_router_decision_store
 from .db import AsyncSessionLocal, get_session
 from .logging_utils.judge_requests import request_logger
 
@@ -229,18 +229,23 @@ async def chat_endpoint(
                 ChatResponse(message="No textual message found in the request.")
             )
 
-        route_decision = "single_turn"
-        try:
-            router = get_conversation_router()
-            router_result = await _run_agent_with_retry(
-                router,
-                user_prompt=aggregated_prompt,
-                usage_limits=UsageLimits(request_limit=2, tool_calls_limit=0),
-            )
-            route_decision = router_result.output.route
-        except Exception:  # pragma: no cover - classification is best-effort
-            logger.exception("Conversation router failed; defaulting to single-turn flow")
-            route_decision = "single_turn"
+        router_store = get_router_decision_store()
+        route_decision = await router_store.get(request.chat_id)
+        if route_decision is None:
+            try:
+                router = get_conversation_router()
+                router_result = await _run_agent_with_retry(
+                    router,
+                    user_prompt=aggregated_prompt,
+                    usage_limits=UsageLimits(request_limit=2, tool_calls_limit=0),
+                )
+                route_decision = router_result.output.route
+                await router_store.set(request.chat_id, route_decision)
+            except Exception:  # pragma: no cover - classification is best-effort
+                logger.exception(
+                    "Conversation router failed; defaulting to single-turn flow"
+                )
+                route_decision = "single_turn"
 
         deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
 
@@ -276,6 +281,7 @@ async def chat_endpoint(
                 multi_output = multi_result.output
                 if multi_output.done:
                     await state_store.discard(request.chat_id)
+                    await router_store.discard(request.chat_id)
                 else:
                     await state_store.set(request.chat_id, multi_output.updated_state)
 

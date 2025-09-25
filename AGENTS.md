@@ -42,5 +42,7 @@
 - Keep tool descriptions aligned with their real capabilities (search terms can include distinctive attributes; seller statistics accepts only the base random key with an optional city filter and returns the full aggregate payload).
 - Enclose every `agent.run` invocation in the shared `_run_agent_with_retry` helper so retries remain consistent across the API.
 - The conversation router is instrumented like other agents, uses `OPENAI_ROUTER_MODEL` (defaulting to `gpt-4.1-mini`), and must respond with the bare labels `single_turn` or `multi_turn`—no rationale is expected from the model.
+- Router decisions are cached per `chat_id` via `RouterDecisionStore` so follow-up turns skip reclassification; clear the cache alongside the multi-turn state once a conversation finishes.
 - Multi-turn interactions must go through `get_multi_turn_agent` plus `search_members`; always persist and reload `TurnState` via `get_turn_state_store()` instead of relying on transcript replay.
 - Configure the multi-turn agent with `OPENAI_MULTI_TURN_MODEL` (default `gpt-4.1-mini`) to keep model selection independent from the single-turn path.
+- The multi-turn prompt now mandates that turn 1 always opens with "If your desired product or shop has any specific characteristics please let me know." and encourages broad clarifying questions that touch on price, brand, warranty, and shop traits to collect information quickly.

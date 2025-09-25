@@ -66,6 +66,8 @@ def _override_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(app_main, "AsyncSessionLocal", _DummySessionFactory())
     monkeypatch.setattr(app_main, "get_conversation_router", lambda: _StubRouter("single_turn"))
+    router_store = _StubRouterDecisionStore()
+    monkeypatch.setattr(app_main, "get_router_decision_store", lambda: router_store)
 
 
 def test_chat_accepts_image_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -215,6 +217,31 @@ class _StubRouter:
 
     async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
         return SimpleNamespace(output=RouterDecision(route=self._route))
+
+
+class _StubRouterDecisionStore:
+    """Simple cache used to track routing decisions in tests."""
+
+    def __init__(self) -> None:
+        self.routes: dict[str, str] = {}
+        self.deleted_ids: list[str] = []
+        self.get_calls: list[str] = []
+
+    async def get(self, chat_id: str) -> str | None:
+        self.get_calls.append(chat_id)
+        return self.routes.get(chat_id)
+
+    async def set(self, chat_id: str, route: str) -> None:
+        self.routes[chat_id] = route
+
+    async def discard(self, chat_id: str) -> None:
+        self.deleted_ids.append(chat_id)
+        self.routes.pop(chat_id, None)
+
+    async def reset(self) -> None:  # pragma: no cover - unused helper
+        self.routes.clear()
+        self.deleted_ids.clear()
+        self.get_calls.clear()
 
 
 class _StubTurnStateStore:
@@ -422,6 +449,56 @@ def test_agent_error_is_logged_with_status(
     assert payload["detail"] == "Agent execution failed."
 
 
+def test_router_cache_prevents_reclassification(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Cached routing decisions should bypass the router and reuse the branch."""
+
+    app.dependency_overrides[get_session] = _session_override
+
+    router_store = app_main.get_router_decision_store()
+    router_store.routes["cached-chat"] = "multi_turn"
+
+    state_store = _StubTurnStateStore()
+    reply = MultiTurnAgentReply(
+        message="لطفاً اطلاعات بیشتری بدهید.",
+        member_random_key=None,
+        done=False,
+        action="ask",
+        updated_state=TurnState(turn=2),
+    )
+
+    monkeypatch.setattr(app_main, "get_turn_state_store", lambda: state_store)
+    monkeypatch.setattr(app_main, "get_multi_turn_agent", lambda: _StubMultiTurnAgent(reply))
+
+    def _router_should_not_run():  # pragma: no cover - ensures cache is used
+        raise AssertionError("Router was invoked despite cached decision")
+
+    monkeypatch.setattr(app_main, "get_conversation_router", _router_should_not_run)
+    monkeypatch.setattr(app_main, "get_agent", lambda: _StubAgent(AgentReply(message="nope")))
+
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "chat_id": "cached-chat",
+                "messages": [{"type": "text", "content": "سلام"}],
+            },
+        )
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["member_random_keys"] is None
+    assert payload["message"] == "لطفاً اطلاعات بیشتری بدهید."
+    assert router_store.get_calls == ["cached-chat"]
+    assert router_store.deleted_ids == []
+    assert router_store.routes["cached-chat"] == "multi_turn"
+
+
 def test_multi_turn_branch_returns_member_key(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -429,6 +506,7 @@ def test_multi_turn_branch_returns_member_key(
 
     app.dependency_overrides[get_session] = _session_override
 
+    router_store = app_main.get_router_decision_store()
     store = _StubTurnStateStore()
     reply = MultiTurnAgentReply(
         message="این گزینه مناسب است.",
@@ -470,3 +548,4 @@ def test_multi_turn_branch_returns_member_key(
     assert payload["message"] == "این گزینه مناسب است."
     assert fallback_called is False
     assert store.deleted_ids == ["multi-turn"]
+    assert router_store.deleted_ids == ["multi-turn"]

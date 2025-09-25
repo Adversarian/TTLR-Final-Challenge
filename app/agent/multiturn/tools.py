@@ -6,7 +6,7 @@ import json
 from typing import List, Optional, Tuple
 
 from pydantic_ai.tools import RunContext, Tool
-from sqlalchemy import text
+from sqlalchemy import text, bindparam, Integer, Float, Boolean, Text as SAText
 
 from ..dependencies import AgentDependencies
 from .schemas import (
@@ -29,8 +29,6 @@ async def _search_members(
     shop_min_score: Optional[float] = None,
     limit: int = 5,
 ) -> SearchMembersResult:
-    """Search the members catalogue with the provided filters."""
-
     if limit <= 0:
         limit = 5
     limit = min(limit, 5)
@@ -87,7 +85,7 @@ async def _search_members(
         ),
         ranked AS (
             SELECT
-                filtered.*, 
+                filtered.*,
                 ROW_NUMBER() OVER (
                     ORDER BY filtered.relevance DESC NULLS LAST,
                              filtered.price ASC,
@@ -164,19 +162,19 @@ async def _search_members(
                     SELECT json_agg(
                         json_build_object(
                             'member_random_key', member_random_key,
-                            'base_name', base_name,
-                            'brand', brand_name,
-                            'price', price,
-                            'shop_name', CONCAT('فروشگاه ', shop_id::text),
-                            'shop_score', shop_score,
-                            'relevance', relevance
+                            'base_name',        base_name,
+                            'brand',            brand_name,
+                            'price',            price,
+                            'shop_name',        CONCAT('فروشگاه ', shop_id::text),
+                            'shop_score',       shop_score,
+                            'relevance',        relevance
                         )
                         ORDER BY relevance DESC NULLS LAST,
                                  price ASC,
                                  member_random_key
-                        LIMIT :limit
                     )
                     FROM ranked
+                    WHERE row_number <= :limit
                 ),
                 '[]'::json
             ),
@@ -200,6 +198,17 @@ async def _search_members(
             )
         ) AS payload;
         """
+    ).bindparams(
+        bindparam("has_query", type_=Boolean),
+        bindparam("query_text", type_=SAText),
+        bindparam("brand_id", type_=Integer),
+        bindparam("category_id", type_=Integer),
+        bindparam("city_id", type_=Integer),
+        bindparam("price_min", type_=Integer),
+        bindparam("price_max", type_=Integer),
+        bindparam("has_warranty", type_=Boolean),
+        bindparam("shop_min_score", type_=Float),
+        bindparam("limit", type_=Integer),
     )
 
     params = {
@@ -218,12 +227,7 @@ async def _search_members(
     session = ctx.deps.session
     result = await session.execute(stmt, params)
     row = result.one()
-    payload_value = None
-    if hasattr(row, "_mapping"):
-        payload_value = row._mapping.get("payload")
-    if payload_value is None:
-        payload_value = row[0]
-
+    payload_value = row._mapping.get("payload") if hasattr(row, "_mapping") else row[0]
     if payload_value is None:
         data = {"count": 0, "topK": [], "distributions": {}}
     elif isinstance(payload_value, str):
@@ -234,21 +238,20 @@ async def _search_members(
     top_candidates = [
         SearchCandidate(**candidate) for candidate in data.get("topK", [])
     ]
-
     distributions = data.get("distributions", {}) or {}
 
     def _coerce_sequence(key: str) -> Optional[List[Tuple[object, int]]]:
         value = distributions.get(key)
         if value is None:
             return None
-        coerced: List[Tuple[object, int]] = []
+        out: List[Tuple[object, int]] = []
         for item in value:
             if isinstance(item, (list, tuple)) and len(item) == 2:
                 try:
-                    coerced.append((item[0], int(item[1])))
+                    out.append((item[0], int(item[1])))
                 except (TypeError, ValueError):
                     continue
-        return coerced or None
+        return out or None
 
     return SearchMembersResult(
         count=int(data.get("count", 0) or 0),
@@ -267,8 +270,7 @@ SEARCH_MEMBERS_TOOL = Tool(
     name="search_members",
     description=(
         "Search Member (BaseProduct × Shop) candidates using the hard filters and "
-        "soft relevance scoring over product names and features. Only call this tool "
-        "when you are choosing a seller for a product."
+        "soft relevance scoring over product names and features. Call this tool to filter products based on the user's requirements but only after asking clarification questions to iron out the input arguments."
     ),
 )
 
