@@ -17,8 +17,9 @@ from tenacity import AsyncRetrying, stop_after_attempt, wait_fixed
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .agent import AgentDependencies, get_agent
+from .agent import AgentDependencies, get_agent, get_multiturn_coordinator
 from .agent.image import get_image_agent
+from .agent.router import RoutingDecision, get_router_agent
 from .db import AsyncSessionLocal, get_session
 from .logging_utils.judge_requests import request_logger
 
@@ -220,19 +221,46 @@ async def chat_endpoint(
                 ChatResponse(message="No textual message found in the request.")
             )
 
-        agent = get_agent()
+        router_agent = get_router_agent()
+        is_multi_turn = False
+        try:
+            router_result = await _run_agent_with_retry(
+                router_agent,
+                user_prompt=aggregated_prompt,
+                usage_limits=UsageLimits(request_limit=1, tool_calls_limit=0),
+            )
+            decision = router_result.output
+            if not isinstance(decision, RoutingDecision):  # pragma: no cover - safety
+                raise TypeError("Router returned an unexpected payload type.")
+            is_multi_turn = decision.mode == "multi_turn"
+        except Exception as exc:  # pragma: no cover - defensive logging path
+            logger.warning("Routing agent failed; defaulting to single-turn flow", exc_info=exc)
+
+        if is_multi_turn:
+            agent = get_multiturn_coordinator()
+        else:
+            agent = get_agent()
+
         deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
 
         try:
-            result = await _run_agent_with_retry(
-                agent,
-                user_prompt=aggregated_prompt,
-                deps=deps,
-                usage_limits=UsageLimits(
-                    request_limit=5,
-                    tool_calls_limit=8,
-                ),
-            )
+            if is_multi_turn:
+                result = await _run_agent_with_retry(
+                    agent,
+                    user_prompt=aggregated_prompt,
+                    deps=deps,
+                    chat_id=request.chat_id,
+                )
+            else:
+                result = await _run_agent_with_retry(
+                    agent,
+                    user_prompt=aggregated_prompt,
+                    deps=deps,
+                    usage_limits=UsageLimits(
+                        request_limit=5,
+                        tool_calls_limit=8,
+                    ),
+                )
         except Exception as exc:  # pragma: no cover - defensive logging path
             raise HTTPException(
                 status_code=500, detail="Agent execution failed."

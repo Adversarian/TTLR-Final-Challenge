@@ -13,6 +13,7 @@ from .schemas import (
     ProductSearchResult,
     SellerStatistics,
 )
+from .multiturn import MultiTurnCoordinator, PolicyTurnResult, execute_policy_turn, get_multiturn_coordinator
 from .tools import (
     FEATURE_LOOKUP_TOOL,
     PRODUCT_SEARCH_TOOL,
@@ -34,4 +35,8 @@ __all__ = [
     "SELLER_STATISTICS_TOOL",
     "_fetch_feature_details",
     "get_agent",
+    "MultiTurnCoordinator",
+    "PolicyTurnResult",
+    "execute_policy_turn",
+    "get_multiturn_coordinator",
 ]
