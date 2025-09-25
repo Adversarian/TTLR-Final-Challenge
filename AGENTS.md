@@ -28,7 +28,8 @@
 - `members`
   - `idx_members_base_random_key` ensures the seller statistics aggregation can quickly collect offers for a base product.
   - `idx_members_shop_id` keeps lookups by shop efficient for warranty/score joins.
-- The `search_members` tool blends the existing trigram and FTS indexes on `base_products` with the numeric filters above; no additional indexes were required. Pricing buckets are derived dynamically so the query remains a single CTE pipeline.
+- `idx_base_products_extra_features_vector` (GIN on the persisted `extra_features_vector`) ensures the multi-turn `search_members` tool can score feature text without rebuilding `to_tsvector` for every row.
+- The `search_members` tool blends the existing trigram and FTS indexes on `base_products` with the numeric filters above while relying on the persisted `extra_features_vector`; pricing buckets are derived dynamically so the query remains a single CTE pipeline.
 
 ## Ground rules for new changes
 - Keep solutions simple, well-documented, and strongly typed; prefer the minimal implementation that satisfies the competition scenarios without per-scenario branching (scenario 0 may remain hard-coded).

@@ -58,10 +58,7 @@ async def _search_members(
                                 websearch_to_tsquery('simple', :query_text)
                             )
                             + 0.2 * ts_rank_cd(
-                                to_tsvector(
-                                    'simple',
-                                    COALESCE(bp.extra_features::text, '')
-                                ),
+                                bp.extra_features_vector,
                                 websearch_to_tsquery('simple', :query_text)
                             )
                             + 0.2 * GREATEST(

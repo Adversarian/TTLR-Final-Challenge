@@ -98,6 +98,14 @@ class BaseProduct(Base):
         ),
         nullable=False,
     )
+    extra_features_vector: Mapped[str] = mapped_column(
+        TSVECTOR,
+        Computed(
+            "to_tsvector('simple', coalesce(extra_features::text, ''))",
+            persisted=True,
+        ),
+        nullable=False,
+    )
 
     members: Mapped[List["Member"]] = relationship(back_populates="base")
 
@@ -119,6 +127,11 @@ class BaseProduct(Base):
         Index(
             "idx_base_products_search_vector",
             "search_vector",
+            postgresql_using="gin",
+        ),
+        Index(
+            "idx_base_products_extra_features_vector",
+            "extra_features_vector",
             postgresql_using="gin",
         ),
     )
