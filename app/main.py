@@ -3,6 +3,7 @@
 import base64
 import binascii
 import io
+import json
 import logging
 import zipfile
 from decimal import Decimal, InvalidOperation
@@ -19,6 +20,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .agent import AgentDependencies, get_agent
 from .agent.image import get_image_agent
+from .agent.multiturn import (
+    MultiTurnAgentInput,
+    TurnState,
+    get_multi_turn_agent,
+    get_turn_state_store,
+    normalize_persian_digits,
+)
+from .agent.router import get_conversation_router
 from .db import AsyncSessionLocal, get_session
 from .logging_utils.judge_requests import request_logger
 
@@ -220,9 +229,76 @@ async def chat_endpoint(
                 ChatResponse(message="No textual message found in the request.")
             )
 
-        agent = get_agent()
+        route_decision = "single_turn"
+        try:
+            router = get_conversation_router()
+            router_result = await _run_agent_with_retry(
+                router,
+                user_prompt=aggregated_prompt,
+                usage_limits=UsageLimits(request_limit=2, tool_calls_limit=0),
+            )
+            route_decision = router_result.output.route
+        except Exception:  # pragma: no cover - classification is best-effort
+            logger.exception("Conversation router failed; defaulting to single-turn flow")
+            route_decision = "single_turn"
+
         deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
 
+        if route_decision == "multi_turn":
+            state_store = get_turn_state_store()
+            turn_state = await state_store.get(request.chat_id)
+            if turn_state is None:
+                turn_state = TurnState()
+
+            multi_agent = get_multi_turn_agent()
+            multi_input = MultiTurnAgentInput(
+                chat_id=request.chat_id,
+                state=turn_state,
+                user_message=aggregated_prompt,
+                normalized_message=normalize_persian_digits(aggregated_prompt),
+            )
+
+            try:
+                multi_result = await _run_agent_with_retry(
+                    multi_agent,
+                    user_prompt=json.dumps(
+                        multi_input.model_dump(mode="json"), ensure_ascii=False
+                    ),
+                    deps=deps,
+                    usage_limits=UsageLimits(request_limit=5, tool_calls_limit=2),
+                )
+            except Exception:
+                logger.exception(
+                    "Multi-turn agent failed; falling back to single-turn flow and clearing state."
+                )
+                await state_store.discard(request.chat_id)
+            else:
+                multi_output = multi_result.output
+                if multi_output.done:
+                    await state_store.discard(request.chat_id)
+                else:
+                    await state_store.set(request.chat_id, multi_output.updated_state)
+
+                member_key = multi_output.member_random_key
+                if member_key:
+                    return await _finalize(
+                        ChatResponse(
+                            message=multi_output.message,
+                            base_random_keys=None,
+                            member_random_keys=[member_key],
+                        )
+                    )
+
+                return await _finalize(
+                    ChatResponse(
+                        message=multi_output.message,
+                        base_random_keys=None,
+                        member_random_keys=None,
+                    )
+                )
+
+        agent = get_agent()
+        
         try:
             result = await _run_agent_with_retry(
                 agent,

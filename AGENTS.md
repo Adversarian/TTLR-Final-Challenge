@@ -15,6 +15,9 @@
 - Image traffic is routed to a dedicated vision agent that consumes the uploaded BinaryContent directly and answers with a few Persian words describing the dominant object, without invoking catalogue tools.
 - The `/chat` endpoint treats the incoming `messages` array as the modalities of a single user turn; the presence of any `image` part triggers the vision agent even if the final element is textual.
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
+- A lightweight conversation router now runs after vision hand-off to decide whether a text-only turn should follow the default single-response flow or the multi-turn member selector. The `multi_turn` branch now delegates to the dedicated agent described below.
+- A dedicated multi-turn agent now owns ambiguous catalogue requests. It persists a compact `TurnState` per `chat_id`, asks at most one focused question per turn, and delegates catalogue lookups to the new `search_members` tool while respecting the two-call relaxation limit.
+- Multi-turn state is kept in-process via `TurnStateStore`; tests patch the store to avoid cross-test contamination. When a conversation ends, the state entry is discarded immediately so fresh chats start from turn 1.
 
 ## Database indexes
 - `base_products`
@@ -25,6 +28,7 @@
 - `members`
   - `idx_members_base_random_key` ensures the seller statistics aggregation can quickly collect offers for a base product.
   - `idx_members_shop_id` keeps lookups by shop efficient for warranty/score joins.
+- The `search_members` tool blends the existing trigram and FTS indexes on `base_products` with the numeric filters above; no additional indexes were required. Pricing buckets are derived dynamically so the query remains a single CTE pipeline.
 
 ## Ground rules for new changes
 - Keep solutions simple, well-documented, and strongly typed; prefer the minimal implementation that satisfies the competition scenarios without per-scenario branching (scenario 0 may remain hard-coded).
@@ -37,3 +41,6 @@
 - Update this file whenever project rules or capabilities change so future tasks inherit accurate guidance.
 - Keep tool descriptions aligned with their real capabilities (search terms can include distinctive attributes; seller statistics accepts only the base random key with an optional city filter and returns the full aggregate payload).
 - Enclose every `agent.run` invocation in the shared `_run_agent_with_retry` helper so retries remain consistent across the API.
+- The conversation router is instrumented like other agents, uses `OPENAI_ROUTER_MODEL` (defaulting to `gpt-4.1-mini`), and must respond with the bare labels `single_turn` or `multi_turn`—no rationale is expected from the model.
+- Multi-turn interactions must go through `get_multi_turn_agent` plus `search_members`; always persist and reload `TurnState` via `get_turn_state_store()` instead of relying on transcript replay.
+- Configure the multi-turn agent with `OPENAI_MULTI_TURN_MODEL` (default `gpt-4.1-mini`) to keep model selection independent from the single-turn path.

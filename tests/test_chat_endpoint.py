@@ -18,6 +18,8 @@ os.environ.setdefault("POSTGRES_DB", "torob")
 import app.main as app_main
 import app.logging_utils.judge_requests as request_logging
 from app.agent import AgentReply
+from app.agent.multiturn import MultiTurnAgentReply, TurnState
+from app.agent.router import RouterDecision
 from app.main import app
 from app.db import get_session
 
@@ -63,6 +65,7 @@ def _override_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure the FastAPI handler uses a stub session factory during tests."""
 
     monkeypatch.setattr(app_main, "AsyncSessionLocal", _DummySessionFactory())
+    monkeypatch.setattr(app_main, "get_conversation_router", lambda: _StubRouter("single_turn"))
 
 
 def test_chat_accepts_image_payload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -192,6 +195,48 @@ class _StubAgent:
 
     async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
         return SimpleNamespace(output=self._reply)
+
+
+class _StubMultiTurnAgent:
+    """Stubbed multi-turn agent returning a fixed reply."""
+
+    def __init__(self, reply: MultiTurnAgentReply) -> None:
+        self._reply = reply
+
+    async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
+        return SimpleNamespace(output=self._reply)
+
+
+class _StubRouter:
+    """Router stub that always returns the configured route."""
+
+    def __init__(self, route: str) -> None:
+        self._route = route
+
+    async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
+        return SimpleNamespace(output=RouterDecision(route=self._route))
+
+
+class _StubTurnStateStore:
+    """Simple in-memory turn state store used in tests."""
+
+    def __init__(self) -> None:
+        self._states: dict[str, TurnState] = {}
+        self.deleted_ids: list[str] = []
+
+    async def get(self, chat_id: str) -> TurnState | None:
+        return self._states.get(chat_id)
+
+    async def set(self, chat_id: str, state: TurnState) -> None:
+        self._states[chat_id] = state
+
+    async def discard(self, chat_id: str) -> None:
+        self.deleted_ids.append(chat_id)
+        self._states.pop(chat_id, None)
+
+    async def reset(self) -> None:  # pragma: no cover - unused helper
+        self._states.clear()
+        self.deleted_ids.clear()
 
 
 class _RecorderLogger:
@@ -375,3 +420,53 @@ def test_agent_error_is_logged_with_status(
     payload = recorder.responses[-1][2]
     assert isinstance(payload, dict)
     assert payload["detail"] == "Agent execution failed."
+
+
+def test_multi_turn_branch_returns_member_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the router selects multi-turn, the specialised agent should handle the turn."""
+
+    app.dependency_overrides[get_session] = _session_override
+
+    store = _StubTurnStateStore()
+    reply = MultiTurnAgentReply(
+        message="این گزینه مناسب است.",
+        member_random_key="member-123",
+        done=True,
+        action="return",
+        updated_state=TurnState(turn=6),
+    )
+
+    monkeypatch.setattr(app_main, "get_turn_state_store", lambda: store)
+    monkeypatch.setattr(app_main, "get_multi_turn_agent", lambda: _StubMultiTurnAgent(reply))
+    monkeypatch.setattr(app_main, "get_conversation_router", lambda: _StubRouter("multi_turn"))
+
+    fallback_called = False
+
+    def _failing_single_turn_agent() -> _StubAgent:
+        nonlocal fallback_called
+        fallback_called = True
+        return _StubAgent(AgentReply(message="nope"))
+
+    monkeypatch.setattr(app_main, "get_agent", _failing_single_turn_agent)
+
+    client = TestClient(app)
+    try:
+        response = client.post(
+            "/chat",
+            json={
+                "chat_id": "multi-turn", 
+                "messages": [{"type": "text", "content": "سلام"}],
+            },
+        )
+    finally:
+        client.close()
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["member_random_keys"] == ["member-123"]
+    assert payload["message"] == "این گزینه مناسب است."
+    assert fallback_called is False
+    assert store.deleted_ids == ["multi-turn"]
