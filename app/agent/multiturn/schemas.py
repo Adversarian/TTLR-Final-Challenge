@@ -32,7 +32,7 @@ class SearchMembersResult(BaseModel):
     """Payload returned from the member search database tool."""
 
     count: int = Field(..., ge=0)
-    topK: List[SearchCandidate] = Field(default_factory=list, max_length=5)
+    topK: List[SearchCandidate] = Field(default_factory=list, max_length=10)
     distributions: SearchMembersDistributions = Field(
         default_factory=SearchMembersDistributions
     )
@@ -53,7 +53,7 @@ class TurnFilters(BaseModel):
 class CandidateOption(BaseModel):
     """Compact option presented to the user for numeric selection."""
 
-    idx: int = Field(..., ge=1, le=5)
+    idx: int = Field(..., ge=1, le=10)
     label: str
     member_random_key: str
 
@@ -67,7 +67,7 @@ class TurnState(BaseModel):
     asked_fields: List[str] = Field(default_factory=list)
     excluded_fields: List[str] = Field(default_factory=list)
     relaxation_stage: int = 0
-    last_options: List[CandidateOption] = Field(default_factory=list, max_length=5)
+    last_options: List[CandidateOption] = Field(default_factory=list, max_length=10)
     pending_question: Optional[str] = None
 
 
