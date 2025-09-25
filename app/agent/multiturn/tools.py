@@ -304,7 +304,10 @@ SEARCH_MEMBERS_TOOL = Tool(
     name="search_members",
     description=(
         "Search Member (BaseProduct × Shop) candidates using the hard filters and "
-        "soft relevance scoring over product names and features. Call this tool to filter products based on the user's requirements but only after asking clarification questions to iron out the input arguments."
+        "soft relevance scoring over product names and features. Call this tool to "
+        "filter products based on the user's requirements only after asking the "
+        "necessary clarification questions, and never invoke it on the first turn of "
+        "a conversation."
     ),
 )
 
