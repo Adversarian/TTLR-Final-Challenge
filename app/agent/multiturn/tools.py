@@ -85,7 +85,15 @@ async def _search_members(
                 filtered.*,
                 ROW_NUMBER() OVER (
                     ORDER BY filtered.relevance DESC NULLS LAST,
+                             CASE
+                                 WHEN :price_min IS NULL AND :price_max IS NULL
+                                     THEN filtered.price
+                             END ASC NULLS LAST,
+                             CASE
+                                 WHEN :shop_min_score IS NULL THEN filtered.shop_score
+                             END DESC NULLS LAST,
                              filtered.price ASC,
+                             filtered.shop_score DESC,
                              filtered.member_random_key
                 ) AS row_number
             FROM filtered
@@ -167,7 +175,15 @@ async def _search_members(
                             'relevance',        relevance
                         )
                         ORDER BY relevance DESC NULLS LAST,
+                                 CASE
+                                     WHEN :price_min IS NULL AND :price_max IS NULL
+                                         THEN price
+                                 END ASC NULLS LAST,
+                                 CASE
+                                     WHEN :shop_min_score IS NULL THEN shop_score
+                                 END DESC NULLS LAST,
                                  price ASC,
+                                 shop_score DESC,
                                  member_random_key
                     )
                     FROM ranked
