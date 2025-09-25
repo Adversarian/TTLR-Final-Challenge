@@ -38,6 +38,13 @@ async def _search_members(
     query_text = " ".join(normalized_tokens)
     has_query = bool(normalized_tokens)
     tokens_payload = normalized_tokens
+    quoted_tokens = []
+    for token in normalized_tokens:
+        cleaned = token.replace('"', " ")
+        if cleaned:
+            quoted_tokens.append(f'"{cleaned}"')
+    any_query_text = " OR ".join(quoted_tokens)
+    has_any_query = bool(quoted_tokens)
 
     stmt = text(
         """
@@ -56,16 +63,30 @@ async def _search_members(
                 CASE
                     WHEN :has_query
                         THEN (
-                            0.3 * ts_rank_cd(
+                            0.2 * ts_rank_cd(
                                 bp.search_vector,
                                 websearch_to_tsquery('simple', :query_text)
                             )
-                            + 0.2 * ts_rank_cd(
+                            + 0.1 * ts_rank_cd(
                                 bp.extra_features_vector,
                                 websearch_to_tsquery('simple', :query_text)
                             )
-                            + 0.3 * COALESCE(token_stats.max_phrase_rank, 0.0)
-                            + 0.2 * COALESCE(token_stats.max_similarity, 0.0)
+                            + 0.35 * COALESCE(token_stats.max_phrase_rank, 0.0)
+                            + 0.25
+                                * (
+                                    CASE
+                                        WHEN :has_any_query
+                                            THEN ts_rank_cd(
+                                                bp.search_vector,
+                                                websearch_to_tsquery(
+                                                    'simple',
+                                                    :any_query_text
+                                                )
+                                            )
+                                        ELSE 0.0
+                                    END
+                                )
+                            + 0.1 * COALESCE(token_stats.max_similarity, 0.0)
                         )
                     ELSE 0.0
                 END AS relevance
@@ -234,6 +255,8 @@ async def _search_members(
     ).bindparams(
         bindparam("has_query", type_=Boolean),
         bindparam("query_text", type_=Text()),
+        bindparam("any_query_text", type_=Text()),
+        bindparam("has_any_query", type_=Boolean),
         bindparam("query_tokens_json", type_=JSON),
         bindparam("brand_id", type_=Integer),
         bindparam("category_id", type_=Integer),
@@ -248,6 +271,8 @@ async def _search_members(
     params = {
         "query_text": query_text,
         "query_tokens_json": tokens_payload,
+        "any_query_text": any_query_text,
+        "has_any_query": has_any_query,
         "has_query": has_query,
         "brand_id": brand_id,
         "category_id": category_id,

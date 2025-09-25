@@ -17,6 +17,8 @@ class _RecordingSession:
     async def execute(self, stmt, params):  # pragma: no cover - simple stub
         self.calls.append({"stmt": stmt, "params": params})
         assert params["query_tokens_json"] == ["لوستر سقفی", "اتاق نشیمن"]
+        assert params["any_query_text"] == '"لوستر سقفی" OR "اتاق نشیمن"'
+        assert params["has_any_query"] is True
         return _StubResult({"count": 0, "topK": [], "distributions": {}})
 
 
