@@ -16,7 +16,7 @@
 - The `/chat` endpoint treats the incoming `messages` array as the modalities of a single user turn; the presence of any `image` part triggers the vision agent even if the final element is textual.
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
 - A lightweight conversation router now runs after vision hand-off to decide whether a text-only turn should follow the default single-response flow or the multi-turn member selector. The `multi_turn` branch now delegates to the dedicated agent described below.
-- A dedicated multi-turn agent now owns ambiguous catalogue requests. It persists a compact `TurnState` per `chat_id`, asks at most one focused question per turn, and delegates catalogue lookups to the new `search_members` tool while respecting the two-call relaxation limit.
+- A dedicated multi-turn agent now owns ambiguous catalogue requests. It persists a compact `TurnState` per `chat_id`, asks at most one focused question per turn, and delegates catalogue lookups to the new `search_members` tool while requesting additional clarification whenever an empty result set is returned.
 - Multi-turn state is kept in-process via `TurnStateStore`; tests patch the store to avoid cross-test contamination. When a conversation ends, the state entry is discarded immediately so fresh chats start from turn 1.
 - Multi-turn filters now capture the verbatim brand, category, and city names supplied by the user alongside any numeric IDs. The `search_members` tool maps cities by exact name when possible and reranks candidates using trigram similarity against brand/category/city names whenever an ID is unavailable so partial matches stay visible.
 

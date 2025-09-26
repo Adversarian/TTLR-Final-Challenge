@@ -69,7 +69,6 @@ class TurnState(BaseModel):
     query_tokens: List[str] = Field(default_factory=list)
     asked_fields: List[str] = Field(default_factory=list)
     excluded_fields: List[str] = Field(default_factory=list)
-    relaxation_stage: int = 0
     last_options: List[CandidateOption] = Field(default_factory=list, max_length=10)
     pending_question: Optional[str] = None
 
