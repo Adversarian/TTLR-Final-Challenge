@@ -13,6 +13,8 @@
 - Base product ingestion now preserves the raw list of member random keys from the dataset in addition to the normalised `members` table for parity with the published schema.
 - Prompting updates steer the agent to craft richer product search queries, avoid duplicate tool calls, and finish once confident instead of looping on identical tool invocations.
 - Image traffic is routed to a dedicated vision agent that consumes the uploaded BinaryContent directly and answers with a few Persian words describing the dominant object, without invoking catalogue tools.
+- A small vision router built on `OPENAI_ROUTER_MODEL` reads the accompanying text to pick between `explanation` (handled by the existing vision agent) and `similarity` (handled through the image search service below).
+- When the router selects the similarity path we call the external image search service configured via `IMAGE_SEARCH_URL`, return the best `base_random_key` alongside the fixed Persian confirmation message, and skip the descriptive agent entirely.
 - The `/chat` endpoint treats the incoming `messages` array as the modalities of a single user turn; the presence of any `image` part triggers the vision agent even if the final element is textual.
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
 - A lightweight conversation router now runs after vision hand-off to decide whether a text-only turn should follow the default single-response flow or the multi-turn member selector. The `multi_turn` branch now delegates to the dedicated agent described below.
