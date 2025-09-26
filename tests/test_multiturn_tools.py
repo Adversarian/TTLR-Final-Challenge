@@ -22,6 +22,10 @@ class _RecordingSession:
         assert params["brand_name_query"] is None
         assert params["category_name_query"] is None
         assert params["city_name_query"] is None
+        sql_text = str(stmt)
+        assert "0.105 * ts_rank_cd(" in sql_text
+        assert "0.195 * ts_rank_cd(" in sql_text
+        assert sql_text.index("0.195 * ts_rank_cd") > sql_text.index("0.105 * ts_rank_cd")
         return _StubResult({"count": 0, "topK": [], "distributions": {}})
 
 

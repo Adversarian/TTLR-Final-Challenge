@@ -80,11 +80,11 @@ async def _search_members(
                     CASE
                         WHEN :has_query
                             THEN (
-                                0.2 * ts_rank_cd(
+                                0.105 * ts_rank_cd(
                                     bp.search_vector,
                                     websearch_to_tsquery('simple', :query_text)
                                 )
-                                + 0.1 * ts_rank_cd(
+                                + 0.195 * ts_rank_cd(
                                     bp.extra_features_vector,
                                     websearch_to_tsquery('simple', :query_text)
                                 )
