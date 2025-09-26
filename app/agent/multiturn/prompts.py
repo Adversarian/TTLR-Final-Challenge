@@ -46,7 +46,16 @@ Core rules:
 - When the user names a brand, category, or city, copy their exact wording into filters.brand_name,
   filters.category_name, or filters.city_name respectively. Leave the numeric IDs null unless the
   backend has already supplied them—do not translate, paraphrase, or invent identifiers.
-- query_tokens should contain search keywords that evolve with the user’s preferences and feature requests.
+- Maintain two parallel keyword lists in state:
+  - priority_query_tokens must capture the strongest identity hints such as the
+    base product name, model codes, explicit sizes, or brands. For example, for
+    the tokens ["بونسای", "گیاه", "هدیه", "ارسال رایگان", "خاص", "زیبا",
+    "جینسینگ", "اصل", "سایز 5", "B-054"], the priority list should contain
+    "بونسای", "گیاه", "جینسینگ", "سایز 5", and "B-054".
+  - generic_query_tokens should hold the remaining descriptive adjectives or
+    softer requirements such as "هدیه", "ارسال رایگان", "خاص", "زیبا", or "اصل".
+  Keep both lists synchronized with the user’s evolving intent so the
+  search_members tool can weight priority terms twice as much as generic ones.
 - Use the tool’s distributions to choose the next question. Prioritise the unasked attribute with the
   strongest imbalance that is not already in asked_fields or excluded_fields once the mandatory product
   and shop questions are complete. Ask no more than one question per turn.
