@@ -16,16 +16,24 @@ class _RecordingSession:
 
     async def execute(self, stmt, params):  # pragma: no cover - simple stub
         self.calls.append({"stmt": stmt, "params": params})
-        assert params["query_tokens_json"] == ["لوستر سقفی", "اتاق نشیمن"]
-        assert params["any_query_text"] == '"لوستر سقفی" OR "اتاق نشیمن"'
-        assert params["has_any_query"] is True
+        assert params["priority_tokens_json"] == ["لوستر سقفی"]
+        assert params["generic_tokens_json"] == ["اتاق نشیمن"]
+        assert params["priority_any_query_text"] == '"لوستر سقفی"'
+        assert params["generic_any_query_text"] == '"اتاق نشیمن"'
+        assert params["has_priority_query"] is True
+        assert params["has_generic_query"] is True
+        assert params["has_priority_any_query"] is True
+        assert params["has_generic_any_query"] is True
+        assert params["priority_weight"] == 2.0
+        assert params["generic_weight"] == 1.0
         assert params["brand_name_query"] is None
         assert params["category_name_query"] is None
         assert params["city_name_query"] is None
         sql_text = str(stmt)
-        assert "0.105 * ts_rank_cd(" in sql_text
-        assert "0.195 * ts_rank_cd(" in sql_text
-        assert sql_text.index("0.195 * ts_rank_cd") > sql_text.index("0.105 * ts_rank_cd")
+        assert "priority_weight" in sql_text
+        assert "generic_weight" in sql_text
+        assert "0.105" in sql_text
+        assert "0.195" in sql_text
         return _StubResult({"count": 0, "topK": [], "distributions": {}})
 
 
@@ -48,7 +56,8 @@ def test_search_members_accepts_multiple_query_tokens() -> None:
     result = asyncio.run(
         _search_members(
             ctx,
-            query_tokens=["لوستر سقفی", "اتاق نشیمن"],
+            priority_query_tokens=["لوستر سقفی"],
+            generic_query_tokens=["اتاق نشیمن"],
         )
     )
 

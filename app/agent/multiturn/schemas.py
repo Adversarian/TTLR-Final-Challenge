@@ -67,7 +67,8 @@ class TurnState(BaseModel):
 
     turn: int = 1
     filters: TurnFilters = Field(default_factory=TurnFilters)
-    query_tokens: List[str] = Field(default_factory=list)
+    priority_query_tokens: List[str] = Field(default_factory=list)
+    generic_query_tokens: List[str] = Field(default_factory=list)
     asked_fields: List[str] = Field(default_factory=list)
     excluded_fields: List[str] = Field(default_factory=list)
     last_options: List[CandidateOption] = Field(default_factory=list, max_length=10)
