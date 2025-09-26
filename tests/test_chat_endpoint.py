@@ -20,6 +20,7 @@ import app.logging_utils.judge_requests as request_logging
 from app.agent import AgentReply
 from app.agent.multiturn import MultiTurnAgentReply, TurnState
 from app.agent.router import RouterDecision
+from app.agent.vision_router.schemas import VisionRouteDecision
 from app.main import app
 from app.db import get_session
 
@@ -198,6 +199,53 @@ def test_invalid_image_payload_returns_400(monkeypatch: pytest.MonkeyPatch) -> N
     ) or response.json()["detail"].startswith("Malformed")
 
 
+def test_similarity_branch_returns_search_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When similarity is requested the handler should return search results."""
+
+    app.dependency_overrides[get_session] = _session_override
+    monkeypatch.setattr(
+        app_main, "get_vision_router", lambda: _StubVisionRouter("similarity")
+    )
+
+    async def _fake_search(image_bytes: bytes, media_type: str) -> str:
+        assert isinstance(image_bytes, (bytes, bytearray))
+        assert media_type == "image/png"
+        return "vdbkdf"
+
+    monkeypatch.setattr(app_main, "_search_similar_product", _fake_search)
+
+    def _fail_image_agent() -> None:
+        raise AssertionError("Vision agent should not run for similarity queries")
+
+    monkeypatch.setattr(app_main, "get_image_agent", _fail_image_agent)
+
+    try:
+        client = TestClient(app)
+        response = client.post(
+            "/chat",
+            json={
+                "chat_id": "similarity-check",
+                "messages": [
+                    {"type": "text", "content": "محصول مشابه می‌خوام"},
+                    {
+                        "type": "image",
+                        "content": "data:image/png;base64,ZmFrZS1pbWFnZS1kYXRh",
+                    },
+                ],
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload == {
+        "message": "محصولی مشابه با این تصویر را پیدا کردم.",
+        "base_random_keys": ["vdbkdf"],
+        "member_random_keys": None,
+    }
+
+
 class _StubAgent:
     """Simple async agent stub returning a prebuilt reply."""
 
@@ -226,6 +274,16 @@ class _StubRouter:
 
     async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
         return SimpleNamespace(output=RouterDecision(route=self._route))
+
+
+class _StubVisionRouter:
+    """Vision router stub returning a predetermined decision."""
+
+    def __init__(self, route: str) -> None:
+        self._route = route
+
+    async def run(self, *args, **kwargs):  # pragma: no cover - simple passthrough
+        return SimpleNamespace(output=VisionRouteDecision(route=self._route))
 
 
 class _StubRouterDecisionStore:

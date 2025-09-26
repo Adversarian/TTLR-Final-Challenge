@@ -5,10 +5,12 @@ import binascii
 import io
 import json
 import logging
+import os
 import zipfile
 from decimal import Decimal, InvalidOperation
 from typing import Any, List, Literal, Mapping, Optional, Tuple
 
+import httpx
 from pydantic_ai import BinaryContent
 from pydantic_ai.usage import UsageLimits
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -28,6 +30,7 @@ from .agent.multiturn import (
     normalize_persian_digits,
 )
 from .agent.router import get_conversation_router, get_router_decision_store
+from .agent.vision_router import get_vision_router
 from .db import AsyncSessionLocal, get_session
 from .logging_utils.judge_requests import request_logger
 
@@ -112,6 +115,65 @@ async def _run_agent_with_retry(agent: Any, **kwargs: Any) -> Any:
             return await agent.run(**kwargs)
 
 
+async def _search_similar_product(image_bytes: bytes, media_type: str) -> str:
+    """Call the external image search service and return the best base key."""
+
+    url = os.getenv("IMAGE_SEARCH_URL")
+    if not url:
+        raise HTTPException(
+            status_code=500,
+            detail="Image similarity search is unavailable.",
+        )
+
+    files = {
+        "file": ("query-image", image_bytes, media_type or "application/octet-stream"),
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            response = await client.post(url, params={"topK": 5}, files=files)
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Image similarity search service returned an error.",
+        ) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Image similarity search request failed.",
+        ) from exc
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Image similarity search response was not valid JSON.",
+        ) from exc
+
+    results = payload.get("results") or []
+    if not results:
+        raise HTTPException(
+            status_code=404,
+            detail="No similar products were found for the provided image.",
+        )
+
+    best_result = max(
+        results,
+        key=lambda item: item.get("similarity", float("-inf")),
+    )
+
+    base_random_key = best_result.get("base_random_key")
+    if not base_random_key:
+        raise HTTPException(
+            status_code=502,
+            detail="Image similarity search response was missing a product key.",
+        )
+
+    return str(base_random_key)
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(
     request: ChatRequest, session: AsyncSession = Depends(get_session)
@@ -184,6 +246,46 @@ async def chat_endpoint(
                 image_bytes, mime_type = _decode_image_payload(image_payloads[-1])
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+            vision_route = "explanation"
+            if aggregated_prompt:
+                try:
+                    vision_router = get_vision_router()
+                    route_result = await _run_agent_with_retry(
+                        vision_router,
+                        user_prompt=aggregated_prompt,
+                        usage_limits=UsageLimits(
+                            request_limit=2,
+                            tool_calls_limit=0,
+                        ),
+                    )
+                    vision_route = route_result.output.route
+                except Exception:  # pragma: no cover - classification fallback
+                    logger.exception(
+                        "Vision router failed; defaulting to explanation flow"
+                    )
+                    vision_route = "explanation"
+
+            if vision_route == "similarity":
+                media_type = mime_type or "image/png"
+                try:
+                    best_key = await _search_similar_product(image_bytes, media_type)
+                except HTTPException:
+                    raise
+                except Exception as exc:  # pragma: no cover - defensive logging path
+                    logger.exception("Unexpected failure during image similarity search")
+                    raise HTTPException(
+                        status_code=502,
+                        detail="Image similarity search failed.",
+                    ) from exc
+
+                return await _finalize(
+                    ChatResponse(
+                        message="محصولی مشابه با این تصویر را پیدا کردم.",
+                        base_random_keys=[best_key],
+                        member_random_keys=None,
+                    )
+                )
 
             agent = get_image_agent()
             deps = AgentDependencies(session=session, session_factory=AsyncSessionLocal)
