@@ -270,7 +270,7 @@ async def chat_endpoint(
                         multi_input.model_dump(mode="json"), ensure_ascii=False
                     ),
                     deps=deps,
-                    usage_limits=UsageLimits(request_limit=5, tool_calls_limit=2),
+                    usage_limits=UsageLimits(request_limit=3, tool_calls_limit=2),
                 )
             except Exception:
                 logger.exception(

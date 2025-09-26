@@ -6,9 +6,8 @@ import os
 from functools import lru_cache
 
 from pydantic_ai import Agent, InstrumentationSettings
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIChatModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.settings import ModelSettings
 
 from ..logging import _ensure_logfire
 from .prompts import ROUTER_PROMPT
@@ -28,7 +27,9 @@ def get_conversation_router() -> Agent[None, RouterDecision]:
             base_url=os.getenv("OPENAI_BASE_URL"),
             api_key=os.getenv("OPENAI_API_KEY"),
         ),
-        settings=ModelSettings(temperature=0, parallel_tool_calls=False),
+        settings=OpenAIChatModelSettings(
+            temperature=0, parallel_tool_calls=False, openai_service_tier="priority"
+        ),
     )
 
     return Agent(
