@@ -16,6 +16,7 @@ class SearchCandidate(BaseModel):
     price: int
     shop_name: str
     shop_score: Optional[float] = None
+    city_name: Optional[str] = None
     relevance: Optional[float] = None
 
 

@@ -75,6 +75,7 @@ async def _search_members(
                 s.id AS shop_id,
                 s.score AS shop_score,
                 s.city_id,
+                city.name AS city_name,
                 s.has_warranty,
                 (
                     CASE
@@ -253,6 +254,7 @@ async def _search_members(
                             'price',            price,
                             'shop_name',        CONCAT('فروشگاه ', shop_id::text),
                             'shop_score',       shop_score,
+                            'city_name',        city_name,
                             'relevance',        relevance
                         )
                         ORDER BY relevance DESC NULLS LAST,
