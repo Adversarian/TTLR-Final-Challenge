@@ -65,7 +65,9 @@ def _override_session_factory(monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure the FastAPI handler uses a stub session factory during tests."""
 
     monkeypatch.setattr(app_main, "AsyncSessionLocal", _DummySessionFactory())
-    monkeypatch.setattr(app_main, "get_conversation_router", lambda: _StubRouter("single_turn"))
+    monkeypatch.setattr(
+        app_main, "get_conversation_router", lambda: _StubRouter("single_turn")
+    )
     router_store = _StubRouterDecisionStore()
     monkeypatch.setattr(app_main, "get_router_decision_store", lambda: router_store)
 
@@ -476,13 +478,17 @@ def test_router_cache_prevents_reclassification(
     )
 
     monkeypatch.setattr(app_main, "get_turn_state_store", lambda: state_store)
-    monkeypatch.setattr(app_main, "get_multi_turn_agent", lambda: _StubMultiTurnAgent(reply))
+    monkeypatch.setattr(
+        app_main, "get_multi_turn_agent", lambda: _StubMultiTurnAgent(reply)
+    )
 
     def _router_should_not_run():  # pragma: no cover - ensures cache is used
         raise AssertionError("Router was invoked despite cached decision")
 
     monkeypatch.setattr(app_main, "get_conversation_router", _router_should_not_run)
-    monkeypatch.setattr(app_main, "get_agent", lambda: _StubAgent(AgentReply(message="nope")))
+    monkeypatch.setattr(
+        app_main, "get_agent", lambda: _StubAgent(AgentReply(message="nope"))
+    )
 
     client = TestClient(app)
     try:
@@ -524,8 +530,12 @@ def test_multi_turn_branch_returns_member_key(
     )
 
     monkeypatch.setattr(app_main, "get_turn_state_store", lambda: store)
-    monkeypatch.setattr(app_main, "get_multi_turn_agent", lambda: _StubMultiTurnAgent(reply))
-    monkeypatch.setattr(app_main, "get_conversation_router", lambda: _StubRouter("multi_turn"))
+    monkeypatch.setattr(
+        app_main, "get_multi_turn_agent", lambda: _StubMultiTurnAgent(reply)
+    )
+    monkeypatch.setattr(
+        app_main, "get_conversation_router", lambda: _StubRouter("multi_turn")
+    )
 
     fallback_called = False
 
@@ -541,7 +551,7 @@ def test_multi_turn_branch_returns_member_key(
         response = client.post(
             "/chat",
             json={
-                "chat_id": "multi-turn", 
+                "chat_id": "multi-turn",
                 "messages": [{"type": "text", "content": "سلام"}],
             },
         )

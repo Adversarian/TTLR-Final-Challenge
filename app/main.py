@@ -304,7 +304,7 @@ async def chat_endpoint(
                 )
 
         agent = get_agent()
-        
+
         try:
             result = await _run_agent_with_retry(
                 agent,

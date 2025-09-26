@@ -11,7 +11,8 @@ class RouterDecision(BaseModel):
     """Binary routing choice indicating whether multi-turn handling is needed."""
 
     route: Literal["single_turn", "multi_turn"] = Field(
-        ..., description="Whether the query can be handled in one turn or needs dialogue.",
+        ...,
+        description="Whether the query can be handled in one turn or needs dialogue.",
     )
 
     @model_validator(mode="before")

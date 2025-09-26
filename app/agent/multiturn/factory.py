@@ -32,7 +32,6 @@ def get_multi_turn_agent() -> Agent[AgentDependencies, MultiTurnAgentReply]:
         settings=OpenAIChatModelSettings(
             temperature=0.1,
             parallel_tool_calls=False,
-            # openai_reasoning_effort="low",
             openai_service_tier="priority",
         ),
     )
