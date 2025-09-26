@@ -31,10 +31,10 @@ async def _search_members(
     price_max: Optional[int] = None,
     has_warranty: Optional[bool] = None,
     shop_min_score: Optional[float] = None,
-    limit: int = 10,
+    limit: int = 5,
 ) -> SearchMembersResult:
     if limit <= 0:
-        limit = 10
+        limit = 5
     limit = min(limit, 10)
 
     normalized_tokens = [token.strip() for token in query_tokens if token.strip()]
