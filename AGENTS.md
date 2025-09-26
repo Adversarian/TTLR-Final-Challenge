@@ -15,6 +15,10 @@
 - Image traffic is routed to a dedicated vision agent that consumes the uploaded BinaryContent directly and answers with a few Persian words describing the dominant object, without invoking catalogue tools.
 - The `/chat` endpoint treats the incoming `messages` array as the modalities of a single user turn; the presence of any `image` part triggers the vision agent even if the final element is textual.
 - Vision inference reuses the `OPENAI_MODEL` configuration through Pydantic-AI's multimodal support, so no separate vision-specific environment variables are required.
+- A lightweight conversation router now runs after vision hand-off to decide whether a text-only turn should follow the default single-response flow or the multi-turn member selector. The `multi_turn` branch now delegates to the dedicated agent described below.
+- A dedicated multi-turn agent now owns ambiguous catalogue requests. It persists a compact `TurnState` per `chat_id`, asks at most one focused question per turn, and delegates catalogue lookups to the new `search_members` tool while requesting additional clarification whenever an empty result set is returned.
+- Multi-turn state is kept in-process via `TurnStateStore`; tests patch the store to avoid cross-test contamination. When a conversation ends, the state entry is discarded immediately so fresh chats start from turn 1.
+- Multi-turn filters now capture the verbatim brand, category, and city names supplied by the user alongside any numeric IDs. The `search_members` tool maps cities by exact name when possible and reranks candidates using trigram similarity against brand/category/city names whenever an ID is unavailable so partial matches stay visible.
 
 ## Database indexes
 - `base_products`
@@ -25,6 +29,8 @@
 - `members`
   - `idx_members_base_random_key` ensures the seller statistics aggregation can quickly collect offers for a base product.
   - `idx_members_shop_id` keeps lookups by shop efficient for warranty/score joins.
+- `idx_base_products_extra_features_vector` (GIN on the persisted `extra_features_vector`) ensures the multi-turn `search_members` tool can score feature text without rebuilding `to_tsvector` for every row.
+- The `search_members` tool blends the existing trigram and FTS indexes on `base_products` with the numeric filters above while relying on the persisted `extra_features_vector`; it now evaluates each query token as a full phrase (via a lateral `websearch_to_tsquery`) and takes the maximum per-token rank and trigram similarity so literal phrase matches outrank loose partial hits. Pricing buckets are derived dynamically so the query remains a single CTE pipeline.
 
 ## Ground rules for new changes
 - Keep solutions simple, well-documented, and strongly typed; prefer the minimal implementation that satisfies the competition scenarios without per-scenario branching (scenario 0 may remain hard-coded).
@@ -37,3 +43,9 @@
 - Update this file whenever project rules or capabilities change so future tasks inherit accurate guidance.
 - Keep tool descriptions aligned with their real capabilities (search terms can include distinctive attributes; seller statistics accepts only the base random key with an optional city filter and returns the full aggregate payload).
 - Enclose every `agent.run` invocation in the shared `_run_agent_with_retry` helper so retries remain consistent across the API.
+- The conversation router is instrumented like other agents, uses `OPENAI_ROUTER_MODEL` (defaulting to `gpt-4.1-mini`), and must respond with the bare labels `single_turn` or `multi_turn`—no rationale is expected from the model.
+- Router decisions are cached per `chat_id` via `RouterDecisionStore` so follow-up turns skip reclassification; clear the cache alongside the multi-turn state once a conversation finishes.
+- Multi-turn interactions must go through `get_multi_turn_agent` plus `search_members`; always persist and reload `TurnState` via `get_turn_state_store()` instead of relying on transcript replay.
+- Configure the multi-turn agent with `OPENAI_MULTI_TURN_MODEL` (default `gpt-4.1-mini`) to keep model selection independent from the single-turn path.
+- The multi-turn prompt now requires the agent to open turn one with the product-focused question "What is your price range, and do you have a specific brand in mind? Does your product have any specific features?" and to follow up with the shop-focused question "Please let me know what kind of shop you have in mind, warranty and score all help narrow it down." Turn three is reserved for a single clarifying question, turn four must present up to five ranked candidates (including name, shop, price, and city), and turn five resolves the selection.
+- The `search_members` ordering prioritises lower prices and higher shop scores when the user has not already imposed price or score constraints, then falls back to relevance-driven ties.
