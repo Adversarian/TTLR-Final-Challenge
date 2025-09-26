@@ -170,7 +170,7 @@ async def _search_similar_product(image_bytes: bytes, media_type: str) -> str:
             status_code=502,
             detail="Image similarity search response was missing a product key.",
         )
-
+    base_random_key = str(base_random_key)[7:13] # TODO: fix!
     return str(base_random_key)
 
 
