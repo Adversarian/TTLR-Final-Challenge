@@ -33,7 +33,7 @@ def get_agent() -> Agent[AgentDependencies, AgentReply]:
             base_url=os.getenv("OPENAI_BASE_URL"), api_key=os.getenv("OPENAI_API_KEY")
         ),
         settings=OpenAIChatModelSettings(
-            temperature=0.2, parallel_tool_calls=True, openai_service_tier="priority"
+            temperature=0.2, parallel_tool_calls=True, #openai_service_tier="priority"
         ),
     )
 
