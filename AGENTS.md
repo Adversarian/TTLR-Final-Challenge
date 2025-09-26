@@ -18,6 +18,7 @@
 - A lightweight conversation router now runs after vision hand-off to decide whether a text-only turn should follow the default single-response flow or the multi-turn member selector. The `multi_turn` branch now delegates to the dedicated agent described below.
 - A dedicated multi-turn agent now owns ambiguous catalogue requests. It persists a compact `TurnState` per `chat_id`, asks at most one focused question per turn, and delegates catalogue lookups to the new `search_members` tool while respecting the two-call relaxation limit.
 - Multi-turn state is kept in-process via `TurnStateStore`; tests patch the store to avoid cross-test contamination. When a conversation ends, the state entry is discarded immediately so fresh chats start from turn 1.
+- Multi-turn filters now capture the verbatim brand, category, and city names supplied by the user alongside any numeric IDs. The `search_members` tool maps cities by exact name when possible and reranks candidates using trigram similarity against brand/category/city names whenever an ID is unavailable so partial matches stay visible.
 
 ## Database indexes
 - `base_products`

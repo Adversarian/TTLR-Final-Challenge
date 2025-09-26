@@ -24,6 +24,9 @@ async def _search_members(
     city_id: Optional[int] = None,
     category_id: Optional[int] = None,
     brand_id: Optional[int] = None,
+    city_name: Optional[str] = None,
+    category_name: Optional[str] = None,
+    brand_name: Optional[str] = None,
     price_min: Optional[int] = None,
     price_max: Optional[int] = None,
     has_warranty: Optional[bool] = None,
@@ -46,9 +49,22 @@ async def _search_members(
     any_query_text = " OR ".join(quoted_tokens)
     has_any_query = bool(quoted_tokens)
 
+    brand_name_query = brand_name.strip() if brand_name and brand_name.strip() else None
+    category_name_query = (
+        category_name.strip() if category_name and category_name.strip() else None
+    )
+    city_name_query = city_name.strip() if city_name and city_name.strip() else None
+
     stmt = text(
         """
-        WITH filtered AS (
+        WITH city_candidate AS (
+            SELECT id
+            FROM cities
+            WHERE :city_name_query IS NOT NULL
+              AND LOWER(name) = LOWER(:city_name_query)
+            LIMIT 1
+        ),
+        filtered AS (
             SELECT
                 m.random_key AS member_random_key,
                 bp.persian_name AS base_name,
@@ -60,40 +76,61 @@ async def _search_members(
                 s.score AS shop_score,
                 s.city_id,
                 s.has_warranty,
-                CASE
-                    WHEN :has_query
-                        THEN (
-                            0.2 * ts_rank_cd(
-                                bp.search_vector,
-                                websearch_to_tsquery('simple', :query_text)
-                            )
-                            + 0.1 * ts_rank_cd(
-                                bp.extra_features_vector,
-                                websearch_to_tsquery('simple', :query_text)
-                            )
-                            + 0.35 * COALESCE(token_stats.max_phrase_rank, 0.0)
-                            + 0.25
-                                * (
-                                    CASE
-                                        WHEN :has_any_query
-                                            THEN ts_rank_cd(
-                                                bp.search_vector,
-                                                websearch_to_tsquery(
-                                                    'simple',
-                                                    :any_query_text
-                                                )
-                                            )
-                                        ELSE 0.0
-                                    END
+                (
+                    CASE
+                        WHEN :has_query
+                            THEN (
+                                0.2 * ts_rank_cd(
+                                    bp.search_vector,
+                                    websearch_to_tsquery('simple', :query_text)
                                 )
-                            + 0.1 * COALESCE(token_stats.max_similarity, 0.0)
-                        )
-                    ELSE 0.0
-                END AS relevance
+                                + 0.1 * ts_rank_cd(
+                                    bp.extra_features_vector,
+                                    websearch_to_tsquery('simple', :query_text)
+                                )
+                                + 0.35 * COALESCE(token_stats.max_phrase_rank, 0.0)
+                                + 0.25
+                                    * (
+                                        CASE
+                                            WHEN :has_any_query
+                                                THEN ts_rank_cd(
+                                                    bp.search_vector,
+                                                    websearch_to_tsquery(
+                                                        'simple',
+                                                        :any_query_text
+                                                    )
+                                                )
+                                            ELSE 0.0
+                                        END
+                                    )
+                                + 0.1 * COALESCE(token_stats.max_similarity, 0.0)
+                            )
+                        ELSE 0.0
+                    END
+                    + CASE
+                        WHEN :brand_name_query IS NOT NULL
+                            THEN 0.2 * similarity(COALESCE(br.title, ''), :brand_name_query)
+                        ELSE 0.0
+                    END
+                    + CASE
+                        WHEN :category_name_query IS NOT NULL
+                            THEN 0.2 * similarity(COALESCE(cat.title, ''), :category_name_query)
+                        ELSE 0.0
+                    END
+                    + CASE
+                        WHEN :city_name_query IS NOT NULL
+                             AND COALESCE(:city_id, city_match.id) IS NULL
+                            THEN 0.1 * similarity(COALESCE(city.name, ''), :city_name_query)
+                        ELSE 0.0
+                    END
+                ) AS relevance
             FROM members AS m
             JOIN base_products AS bp ON bp.random_key = m.base_random_key
             LEFT JOIN brands AS br ON br.id = bp.brand_id
+            LEFT JOIN categories AS cat ON cat.id = bp.category_id
             JOIN shops AS s ON s.id = m.shop_id
+            LEFT JOIN cities AS city ON city.id = s.city_id
+            LEFT JOIN city_candidate AS city_match ON TRUE
             LEFT JOIN LATERAL (
                 SELECT
                     MAX(
@@ -115,7 +152,10 @@ async def _search_members(
             ) AS token_stats ON TRUE
             WHERE (:brand_id IS NULL OR bp.brand_id = :brand_id)
               AND (:category_id IS NULL OR bp.category_id = :category_id)
-              AND (:city_id IS NULL OR s.city_id = :city_id)
+              AND (
+                    COALESCE(:city_id, city_match.id) IS NULL
+                    OR s.city_id = COALESCE(:city_id, city_match.id)
+                )
               AND (:price_min IS NULL OR m.price >= :price_min)
               AND (:price_max IS NULL OR m.price <= :price_max)
               AND (:has_warranty IS NULL OR s.has_warranty = :has_warranty)
@@ -259,6 +299,9 @@ async def _search_members(
         bindparam("any_query_text", type_=Text()),
         bindparam("has_any_query", type_=Boolean),
         bindparam("query_tokens_json", type_=JSON),
+        bindparam("brand_name_query", type_=Text()),
+        bindparam("category_name_query", type_=Text()),
+        bindparam("city_name_query", type_=Text()),
         bindparam("brand_id", type_=Integer),
         bindparam("category_id", type_=Integer),
         bindparam("city_id", type_=Integer),
@@ -275,6 +318,9 @@ async def _search_members(
         "any_query_text": any_query_text,
         "has_any_query": has_any_query,
         "has_query": has_query,
+        "brand_name_query": brand_name_query,
+        "category_name_query": category_name_query,
+        "city_name_query": city_name_query,
         "brand_id": brand_id,
         "category_id": category_id,
         "city_id": city_id,

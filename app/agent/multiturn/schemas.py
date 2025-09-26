@@ -42,8 +42,11 @@ class TurnFilters(BaseModel):
     """Hard constraints applied to the member search."""
 
     brand_id: Optional[int] = None
+    brand_name: Optional[str] = None
     category_id: Optional[int] = None
+    category_name: Optional[str] = None
     city_id: Optional[int] = None
+    city_name: Optional[str] = None
     price_min: Optional[int] = None
     price_max: Optional[int] = None
     has_warranty: Optional[bool] = None

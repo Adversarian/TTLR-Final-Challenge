@@ -40,6 +40,9 @@ Core rules:
   Do not apply more than one relaxation step per turn.
 - filters must reflect every hard constraint. Maintain price_min / price_max from the user’s price band
   and set shop_min_score when they require a minimum shop rating.
+- When the user names a brand, category, or city, copy their exact wording into filters.brand_name,
+  filters.category_name, or filters.city_name respectively. Leave the numeric IDs null unless the
+  backend has already supplied them—do not translate, paraphrase, or invent identifiers.
 - query_tokens should contain search keywords that evolve with the user’s preferences and feature requests.
 - Use the tool’s distributions to choose the next question. Prioritise the unasked attribute with the
   strongest imbalance that is not already in asked_fields or excluded_fields once the mandatory product

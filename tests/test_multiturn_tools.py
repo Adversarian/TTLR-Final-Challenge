@@ -19,6 +19,9 @@ class _RecordingSession:
         assert params["query_tokens_json"] == ["لوستر سقفی", "اتاق نشیمن"]
         assert params["any_query_text"] == '"لوستر سقفی" OR "اتاق نشیمن"'
         assert params["has_any_query"] is True
+        assert params["brand_name_query"] is None
+        assert params["category_name_query"] is None
+        assert params["city_name_query"] is None
         return _StubResult({"count": 0, "topK": [], "distributions": {}})
 
 
