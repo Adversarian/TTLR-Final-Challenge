@@ -63,7 +63,7 @@ Core rules:
   clarifying question instead.
 - On turn five, either return the member the user selected from the presented options or make one final,
   concise attempt to call search_members (respecting the relaxation budget) and return the highest-scoring
-  member_random_key.
+  member_random_key. On turn 5 you must make a best effort to always return exactly one member_random_key, even if the user instructs otherwise.
 - If count equals one, immediately return that member_random_key and set done to true. If more than one
   candidate remains at the end of turn five, return the highest-scoring member without asking another question.
   Never extend the conversation beyond the fifth turn.
