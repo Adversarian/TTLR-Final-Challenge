@@ -1,5 +1,5 @@
 # TTLR Final Challenge
-"Confuse yourself, confuse the enemy" - *Confucius*
+"Confuse yourself, confuse the enemy." - *Confucius*
 
 Torob Turbo LLM Rush Finals: Submission from Arian Tashakkor.
 
